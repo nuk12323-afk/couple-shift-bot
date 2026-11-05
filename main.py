@@ -375,6 +375,9 @@ async def line_webhook(request: Request, x_line_signature: Optional[str] = Heade
     if not LINE_CHANNEL_SECRET or not LINE_CHANNEL_ACCESS_TOKEN:
         return JSONResponse({"status": "LINE credentials not configured"}, status_code=200)
 
+    if not x_line_signature:
+        return JSONResponse({"status": "Missing signature"}, status_code=400)
+
     body = await request.body()
     body_text = body.decode("utf-8")
     parser = WebhookParser(LINE_CHANNEL_SECRET)
