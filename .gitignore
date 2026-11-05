@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+shifts.db
+ocr_result.txt
+ocr_clean.txt
+header_crop.png
+row4_crop.png
+days_9_to_16.png

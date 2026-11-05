@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ระบบตารางเวรคู่รัก 💕</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
+    body {
+      font-family: 'Prompt', sans-serif;
+      background-color: #F8FAFC;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      height: 6px;
+      width: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="text-slate-800 pb-20">
+
+  <!-- Navigation Bar -->
+  <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 py-3 shadow-sm">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-pink-500 flex items-center justify-center text-white shadow-md shadow-pink-100">
+          <i data-lucide="calendar-heart" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-base font-bold bg-gradient-to-r from-sky-600 to-pink-600 bg-clip-text text-transparent">ตารางเวรคู่รัก</h1>
+          <p class="text-[11px] text-slate-500 leading-none">เตือนค่ำ: <span id="headerTomorrowTime" class="font-semibold text-pink-600">20:00</span> | เตือนเช้า: <span id="headerTodayTime" class="font-semibold text-sky-600">06:00</span></p>
+        </div>
+      </div>
+      
+      <div class="flex items-center space-x-2">
+        <button onclick="openOcrModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 text-xs font-medium border border-sky-200 transition">
+          <i data-lucide="sparkles" class="w-4 h-4 text-sky-500"></i>
+          <span>Typhoon OCR</span>
+        </button>
+        <button onclick="openSettingsModal()" class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition">
+          <i data-lucide="settings" class="w-5 h-5"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-4xl mx-auto px-4 py-4 space-y-4">
+
+    <!-- Today's Overview Banner -->
+    <section class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center space-x-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-500">เวรประจำวันนี้</h2>
+        </div>
+        <span id="todayDateStr" class="text-xs text-slate-500 font-medium">กำลังโหลด...</span>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3" id="todayCards">
+        <!-- Rendered dynamically -->
+        <div class="p-3 bg-slate-50 rounded-xl animate-pulse h-20"></div>
+        <div class="p-3 bg-slate-50 rounded-xl animate-pulse h-20"></div>
+      </div>
+
+      <!-- Match Banner -->
+      <div id="todayMatchBanner" class="mt-3 p-2.5 rounded-xl text-center text-xs font-medium transition hidden">
+      </div>
+    </section>
+
+    <!-- Month Selector & Free Days Pill -->
+    <section class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm w-fit">
+        <button onclick="changeMonth(-1)" class="p-1 hover:bg-slate-100 rounded-lg text-slate-600">
+          <i data-lucide="chevron-left" class="w-4 h-4"></i>
+        </button>
+        <span id="currentMonthLabel" class="text-sm font-semibold px-2 min-w-[120px] text-center">พฤศจิกายน 2569</span>
+        <button onclick="changeMonth(1)" class="p-1 hover:bg-slate-100 rounded-lg text-slate-600">
+          <i data-lucide="chevron-right" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Free Days Pill -->
+      <div id="freeDaysBadge" class="flex items-center space-x-2 bg-pink-50 border border-pink-200 px-3 py-1.5 rounded-xl text-pink-700 text-xs font-medium">
+        <i data-lucide="heart" class="w-4 h-4 text-pink-500 fill-pink-500"></i>
+        <span id="freeDaysCountText">วันหยุดตรงกัน: 0 วัน</span>
+      </div>
+    </section>
+
+    <!-- Calendar Legend -->
+    <section class="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
+      <span class="font-medium text-slate-400">คำอธิบายเวร:</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-sky-100 text-sky-700 font-medium">☀️ ช (08:00-16:00)</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">⛅ บ (16:00-00:00)</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-purple-100 text-purple-700 font-medium">🌙 ด (00:00-08:00)</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-cyan-100 text-cyan-700 font-medium">🏖️ x (เช้าวันหยุด)</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-rose-100 text-rose-700 font-medium">🩸 C (ขอเลือด ถึงเที่ยงคืน)</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">⏰ N (เข้า 7 โมงเช้า)</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">💼 ปกติ (08:00-16:00)</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-green-100 text-green-700 font-medium">💤 Off (วันหยุด)</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-semibold">✨ ว่างตรงกัน</span>
+    </section>
+
+    <!-- Calendar Grid -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <!-- Days of week -->
+      <div class="grid grid-cols-7 bg-slate-50 border-b border-slate-200 text-center py-2 text-xs font-semibold text-slate-500">
+        <span class="text-rose-500">อา</span>
+        <span>จ</span>
+        <span>อ</span>
+        <span>พ</span>
+        <span>พฤ</span>
+        <span>ศ</span>
+        <span class="text-purple-600">ส</span>
+      </div>
+      <!-- Days grid -->
+      <div id="calendarGrid" class="grid grid-cols-7 gap-px bg-slate-200">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- Free Days List Section -->
+    <section class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+      <div class="flex items-center space-x-2 mb-3">
+        <i data-lucide="sparkle" class="w-4 h-4 text-amber-500"></i>
+        <h3 class="text-sm font-semibold text-slate-700">วันที่หยุดตรงกันในเดือนนี้ (วางแผนไปเที่ยว/เดท)</h3>
+      </div>
+      <div id="freeDaysList" class="flex flex-wrap gap-2">
+        <!-- Rendered dynamically -->
+        <span class="text-xs text-slate-400">ยังไม่มีข้อมูล</span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Typhoon OCR Modal -->
+  <div id="ocrModal" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Header -->
+      <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-sky-50 to-pink-50">
+        <div class="flex items-center space-x-2">
+          <div class="w-8 h-8 rounded-lg bg-sky-500 text-white flex items-center justify-center">
+            <i data-lucide="scan" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-800">Typhoon OCR อ่านตารางเวร</h3>
+            <p class="text-[11px] text-slate-500">อัปโหลดรูปภาพ หรือไฟล์ PDF ใบตารางเวร</p>
+          </div>
+        </div>
+        <button onclick="closeOcrModal()" class="p-1 rounded-lg hover:bg-white text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="p-5 overflow-y-auto space-y-4 custom-scroll">
+        <!-- File input dropzone -->
+        <div id="dropZone" onclick="document.getElementById('fileInput').click()" class="border-2 border-dashed border-sky-300 hover:border-sky-500 rounded-2xl p-6 text-center cursor-pointer bg-sky-50/40 hover:bg-sky-50 transition">
+          <input type="file" id="fileInput" accept="image/*,.pdf" class="hidden" onchange="handleFileSelect(event)">
+          <div class="flex flex-col items-center">
+            <div class="w-12 h-12 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center mb-2">
+              <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+            </div>
+            <p class="text-sm font-semibold text-slate-700" id="fileLabel">คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวางที่นี่</p>
+            <p class="text-xs text-slate-400 mt-1">รองรับไฟล์ PNG, JPG, WEBP และ PDF</p>
+          </div>
+        </div>
+
+        <!-- Month & Year Selector for OCR -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">เลือกเดือนของตารางเวร</label>
+            <select id="ocrMonthSelect" class="w-full text-xs p-2 rounded-xl border border-slate-200 bg-white">
+              <option value="1">มกราคม</option>
+              <option value="2">กุมภาพันธ์</option>
+              <option value="3">มีนาคม</option>
+              <option value="4">เมษายน</option>
+              <option value="5">พฤษภาคม</option>
+              <option value="6">มิถุนายน</option>
+              <option value="7">กรกฎาคม</option>
+              <option value="8">สิงหาคม</option>
+              <option value="9">กันยายน</option>
+              <option value="10">ตุลาคม</option>
+              <option value="11" selected>พฤศจิกายน</option>
+              <option value="12">ธันวาคม</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">เลือกปี (พ.ศ.)</label>
+            <select id="ocrYearSelect" class="w-full text-xs p-2 rounded-xl border border-slate-200 bg-white">
+              <option value="2026" selected>2569 (2026)</option>
+              <option value="2027">2570 (2027)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Action Button -->
+        <button id="btnStartOcr" onclick="submitOcr()" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-pink-500 hover:from-sky-600 hover:to-pink-600 text-white font-medium text-xs flex items-center justify-center space-x-2 shadow-md transition disabled:opacity-50">
+          <i data-lucide="sparkles" class="w-4 h-4"></i>
+          <span id="btnOcrText">เริ่มสแกนด้วย Typhoon OCR</span>
+        </button>
+
+        <!-- Loading spinner -->
+        <div id="ocrLoading" class="hidden text-center py-4 space-y-2">
+          <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-sky-500 border-t-transparent"></div>
+          <p class="text-xs text-slate-500 font-medium">Typhoon OCR กำลังประมวลผลตารางเวรและภาษาไทย กรุณารอสักครู่...</p>
+        </div>
+
+        <!-- Preview Results Table -->
+        <div id="ocrPreviewContainer" class="hidden space-y-3 pt-3 border-t border-slate-100">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold text-slate-700 flex items-center space-x-1">
+              <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-500"></i>
+              <span>ผลลัพธ์ที่ตรวจพบ (ตรวจทานก่อนบันทึก)</span>
+            </h4>
+          </div>
+          <div id="ocrPreviewContent" class="space-y-3 text-xs max-h-60 overflow-y-auto custom-scroll">
+            <!-- Dynamic Parsed Person Lists -->
+          </div>
+          <button onclick="confirmSaveOcrShifts()" class="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center justify-center space-x-1.5 shadow transition">
+            <i data-lucide="save" class="w-4 h-4"></i>
+            <span>ยืนยันและบันทึกลงปฏิทิน</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-sky-50 to-pink-50">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center space-x-2">
+          <i data-lucide="bell-ring" class="w-4 h-4 text-sky-500"></i>
+          <span>ตั้งค่าการแจ้งเตือน LINE</span>
+        </h3>
+        <button onclick="closeSettingsModal()" class="p-1 rounded-lg hover:bg-white text-slate-400">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-4 max-h-[85vh] overflow-y-auto custom-scroll">
+        <!-- 1. Tomorrow Shift Reminder (Evening) -->
+        <div class="p-3 bg-pink-50/50 rounded-xl border border-pink-100 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+              <span>🌙</span>
+              <span>แจ้งเตือนล่วงหน้า (เวรวันพรุ่งนี้)</span>
+            </span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="settingTomorrowEnabled" checked class="sr-only peer">
+              <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-pink-500"></div>
+            </label>
+          </div>
+          <div class="flex items-center space-x-2">
+            <label class="text-[11px] text-slate-500 whitespace-nowrap">เวลาแจ้งเตือน:</label>
+            <input type="time" id="settingTomorrowTime" value="20:00" class="text-xs p-1.5 rounded-lg border border-slate-200 bg-white w-full">
+          </div>
+          <p class="text-[10px] text-slate-500">แนะนำ 20:00 น. เพื่อให้รู้ล่วงหน้าก่อนนอน และตั้งนาฬิกาปลุกสำหรับเวร 7 โมงเช้า</p>
+        </div>
+
+        <!-- 2. Today Shift Reminder (Morning) -->
+        <div class="p-3 bg-sky-50/50 rounded-xl border border-sky-100 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+              <span>☀️</span>
+              <span>แจ้งเตือนตอนเช้า (เวรวันนี้)</span>
+            </span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="settingTodayEnabled" checked class="sr-only peer">
+              <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+            </label>
+          </div>
+          <div class="flex items-center space-x-2">
+            <label class="text-[11px] text-slate-500 whitespace-nowrap">เวลาแจ้งเตือน:</label>
+            <input type="time" id="settingTodayTime" value="06:00" class="text-xs p-1.5 rounded-lg border border-slate-200 bg-white w-full">
+          </div>
+          <p class="text-[10px] text-slate-500">ส่งเตือนก่อนเริ่มวันใหม่ (แนะนำ 06:00 น. เผื่อเวลาเดินทางก่อนเข้างาน 7 โมง)</p>
+        </div>
+
+        <!-- 3. Immediate Announcement on Upload -->
+        <div class="p-3 bg-amber-50/50 rounded-xl border border-amber-100 flex items-center justify-between">
+          <div>
+            <span class="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+              <span>📢</span>
+              <span>ประกาศเข้า LINE ทันทีเมื่ออัปเดตเวร</span>
+            </span>
+            <p class="text-[10px] text-slate-500 mt-0.5">ส่งสรุปเวรทั้งเดือนและการ์ดวันหยุดทันทีหลังกดบันทึก</p>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer ml-2">
+            <input type="checkbox" id="settingUploadNotifyEnabled" checked class="sr-only peer">
+            <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+          </label>
+        </div>
+
+        <!-- Target LINE ID -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">LINE Group ID หรือ User ID เป้าหมาย</label>
+          <input type="text" id="settingTargetLineId" placeholder="เช่น U1234... หรือ C1234... (ห้องแชท/กลุ่ม)" class="text-xs p-2.5 rounded-xl border border-slate-200 bg-white w-full">
+          <p class="text-[10px] text-slate-400 mt-1">เมื่อคุณหรือแฟนส่งข้อความหาบอทใน LINE ระบบจะจดจำ ID ให้โดยอัตโนมัติ</p>
+        </div>
+
+        <!-- Test Notification Buttons -->
+        <div class="pt-2 border-t border-slate-100 space-y-2">
+          <span class="text-[11px] font-semibold text-slate-500 block">ทดสอบการส่งแจ้งเตือน:</span>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="triggerTestReminder('tomorrow')" class="py-2 px-2 rounded-xl bg-pink-50 text-pink-600 hover:bg-pink-100 border border-pink-200 text-xs font-medium flex items-center justify-center space-x-1 transition">
+              <i data-lucide="moon" class="w-3.5 h-3.5"></i>
+              <span>ทดสอบเตือนวันพรุ่งนี้</span>
+            </button>
+            <button onclick="triggerTestReminder('today')" class="py-2 px-2 rounded-xl bg-sky-50 text-sky-600 hover:bg-sky-100 border border-sky-200 text-xs font-medium flex items-center justify-center space-x-1 transition">
+              <i data-lucide="sun" class="w-3.5 h-3.5"></i>
+              <span>ทดสอบเตือนวันนี้</span>
+            </button>
+          </div>
+          <p id="testNotifyResult" class="text-[11px] text-center mt-1 hidden"></p>
+        </div>
+
+        <button onclick="saveSettings()" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-medium text-xs shadow transition">
+          บันทึกการตั้งค่า
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Single Day Edit Modal -->
+  <div id="editDayModal" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full shadow-2xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 id="editModalDateTitle" class="text-sm font-bold text-slate-800">แก้ไขเวร</h3>
+        <button onclick="closeEditModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div id="editPersonsContainer" class="space-y-3">
+        <!-- Rendered by JS -->
+      </div>
+      <button onclick="saveDayEdits()" class="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow">
+        บันทึก
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let currentDate = new Date(2026, 10, 5); // Default to current time Nov 2026
+    let persons = [];
+    let shiftTypes = [];
+    let shifts = [];
+    let ocrParsedData = null;
+    let selectedEditDate = null;
+
+    const THAI_MONTHS = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+
+    async function init() {
+      lucide.createIcons();
+      await fetchInitialData();
+      renderAll();
+    }
+
+    async function fetchInitialData() {
+      try {
+        const [pRes, stRes, sRes, setRes] = await Promise.all([
+          fetch('/api/persons').then(r => r.json()),
+          fetch('/api/shift-types').then(r => r.json()),
+          fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json()),
+          fetch('/api/settings').then(r => r.json())
+        ]);
+        persons = pRes;
+        shiftTypes = stRes;
+        shifts = sRes;
+
+        // Apply settings
+        if (setRes.notify_tomorrow_time) {
+          document.getElementById('headerTomorrowTime').innerText = setRes.notify_tomorrow_time;
+          document.getElementById('settingTomorrowTime').value = setRes.notify_tomorrow_time;
+        }
+        if (setRes.notify_tomorrow_enabled !== undefined) {
+          document.getElementById('settingTomorrowEnabled').checked = setRes.notify_tomorrow_enabled === 'true';
+        }
+        if (setRes.notify_today_time) {
+          document.getElementById('headerTodayTime').innerText = setRes.notify_today_time;
+          document.getElementById('settingTodayTime').value = setRes.notify_today_time;
+        }
+        if (setRes.notify_today_enabled !== undefined) {
+          document.getElementById('settingTodayEnabled').checked = setRes.notify_today_enabled === 'true';
+        }
+        if (setRes.notify_on_upload_enabled !== undefined) {
+          document.getElementById('settingUploadNotifyEnabled').checked = setRes.notify_on_upload_enabled === 'true';
+        }
+        if (setRes.target_line_id) {
+          document.getElementById('settingTargetLineId').value = setRes.target_line_id;
+        }
+      } catch (e) {
+        console.error("Fetch data error:", e);
+      }
+    }
+
+    function getMonthQuery(d) {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      return `${year}-${month}`;
+    }
+
+    function renderAll() {
+      renderTodayCard();
+      renderCalendar();
+      fetchFreeDays();
+      lucide.createIcons();
+    }
+
+    function renderTodayCard() {
+      const todayStr = getMonthQuery(new Date()) + '-' + String(new Date().getDate()).padStart(2, '0');
+      document.getElementById('todayDateStr').innerText = `${new Date().getDate()} ${THAI_MONTHS[new Date().getMonth() + 1]} ${new Date().getFullYear() + 543}`;
+
+      const container = document.getElementById('todayCards');
+      container.innerHTML = '';
+
+      let todayShifts = [];
+
+      persons.forEach(person => {
+        const s = shifts.find(item => item.person_id === person.id && item.shift_date === todayStr);
+        const st = shiftTypes.find(t => t.code === (s ? s.shift_code : ''));
+        todayShifts.push({ person, st, code: s ? s.shift_code : '-' });
+
+        const card = document.createElement('div');
+        card.className = "p-3 rounded-xl border border-slate-100 flex items-center justify-between";
+        card.style.backgroundColor = `${person.color}08`;
+        card.style.borderColor = `${person.color}25`;
+
+        const badgeColor = st ? st.color : '#94A3B8';
+        const badgeIcon = st ? st.icon : '❓';
+        const badgeName = st ? st.name : 'ยังไม่ระบุ';
+        const badgeTime = st && st.start_time ? `${st.start_time}-${st.end_time}` : (st && st.is_off ? 'ทั้งวัน' : '-');
+
+        card.innerHTML = `
+          <div>
+            <span class="text-[11px] font-semibold uppercase" style="color: ${person.color}">${person.role === 'me' ? '🧑 ' : '👩 '}${person.name}</span>
+            <p class="text-xs font-bold text-slate-700 mt-0.5">${badgeIcon} ${badgeName}</p>
+            <p class="text-[10px] text-slate-400">${badgeTime}</p>
+          </div>
+          <span class="px-2.5 py-1 rounded-lg text-xs font-bold text-white shadow-sm" style="background-color: ${badgeColor}">${s ? s.shift_code : '-'}</span>
+        `;
+        container.appendChild(card);
+      });
+
+      // Match Banner
+      const banner = document.getElementById('todayMatchBanner');
+      const isBothOff = todayShifts.length === 2 && todayShifts.every(t => t.st && t.st.is_off);
+      const isSameShift = todayShifts.length === 2 && todayShifts[0].code === todayShifts[1].code && todayShifts[0].code !== '-';
+
+      if (isBothOff) {
+        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200";
+        banner.innerHTML = "🎉 วันนี้วันหยุดตรงกันทั้งคู่! ไปเที่ยวไหนดีนะ 💕";
+        banner.classList.remove('hidden');
+      } else if (isSameShift) {
+        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200";
+        banner.innerHTML = "☀️ วันนี้เข้าเวรเหมือนกันเลย สู้ๆ นะคะ ✌️";
+        banner.classList.remove('hidden');
+      } else {
+        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-medium bg-pink-50 text-pink-700 border border-pink-200";
+        banner.innerHTML = "✨ ส่งกำลังใจให้กันในวันทำงานนะ 💖";
+        banner.classList.remove('hidden');
+      }
+    }
+
+    function renderCalendar() {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth(); // 0-indexed
+      document.getElementById('currentMonthLabel').innerText = `${THAI_MONTHS[month + 1]} ${year + 543}`;
+
+      const firstDayIndex = new Date(year, month, 1).getDay();
+      const totalDays = new Date(year, month + 1, 0).getDate();
+
+      const grid = document.getElementById('calendarGrid');
+      grid.innerHTML = '';
+
+      // Empty cells before first day
+      for (let i = 0; i < firstDayIndex; i++) {
+        const emptyCell = document.createElement('div');
+        emptyCell.className = "bg-white min-h-[90px] p-1.5 opacity-40";
+        grid.appendChild(emptyCell);
+      }
+
+      // Days of month
+      for (let day = 1; day <= totalDays; day++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dayCell = document.createElement('div');
+        dayCell.className = "bg-white min-h-[95px] p-1.5 flex flex-col justify-between hover:bg-sky-50/50 transition cursor-pointer relative group border-t border-l border-slate-100";
+        dayCell.onclick = () => openEditDayModal(dateStr);
+
+        // Find shifts for both
+        let dayShifts = [];
+        persons.forEach(p => {
+          const s = shifts.find(item => item.person_id === p.id && item.shift_date === dateStr);
+          const st = shiftTypes.find(t => t.code === (s ? s.shift_code : ''));
+          dayShifts.push({ person: p, shift: s, type: st });
+        });
+
+        // Check if both are OFF
+        const bothOff = dayShifts.length === 2 && dayShifts.every(d => d.type && d.type.is_off);
+
+        let badgesHtml = '';
+        dayShifts.forEach(d => {
+          if (d.shift) {
+            const color = d.type ? d.type.color : '#94A3B8';
+            const icon = d.type ? d.type.icon : '';
+            badgesHtml += `
+              <div class="flex items-center justify-between px-1.5 py-0.5 rounded text-[10px] font-medium leading-tight text-white mb-1 shadow-xs" style="background-color: ${color}">
+                <span class="truncate max-w-[45px]">${d.person.name}</span>
+                <span class="font-bold">${d.shift.shift_code}</span>
+              </div>
+            `;
+          }
+        });
+
+        const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
+
+        dayCell.innerHTML = `
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs font-bold ${isToday ? 'w-5 h-5 rounded-full bg-pink-500 text-white flex items-center justify-center' : 'text-slate-600'}">${day}</span>
+            ${bothOff ? '<span class="text-[9px] bg-yellow-100 text-yellow-800 border border-yellow-300 px-1 rounded font-bold">✨ว่าง</span>' : ''}
+          </div>
+          <div class="flex-1 flex flex-col justify-end">
+            ${badgesHtml}
+          </div>
+        `;
+
+        if (bothOff) {
+          dayCell.classList.add('bg-yellow-50/40');
+        }
+
+        grid.appendChild(dayCell);
+      }
+    }
+
+    async function changeMonth(delta) {
+      currentDate.setMonth(currentDate.getMonth() + delta);
+      shifts = await fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json());
+      renderAll();
+    }
+
+    async function fetchFreeDays() {
+      try {
+        const monthQuery = getMonthQuery(currentDate);
+        const res = await fetch(`/api/free-days?month=${monthQuery}`).then(r => r.json());
+        const count = res.count || 0;
+        document.getElementById('freeDaysCountText').innerText = `วันหยุดตรงกัน: ${count} วัน`;
+
+        const listContainer = document.getElementById('freeDaysList');
+        listContainer.innerHTML = '';
+        if (res.free_days && res.free_days.length > 0) {
+          res.free_days.forEach(item => {
+            const d = new Date(item.date);
+            const badge = document.createElement('span');
+            badge.className = "inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-pink-50 border border-pink-200 text-pink-700 text-xs font-semibold";
+            badge.innerHTML = `<i data-lucide="heart" class="w-3 h-3 text-pink-500 fill-pink-500"></i><span>${d.getDate()} ${THAI_MONTHS[d.getMonth() + 1]}</span>`;
+            listContainer.appendChild(badge);
+          });
+          lucide.createIcons();
+        } else {
+          listContainer.innerHTML = `<span class="text-xs text-slate-400">เดือนนี้ยังไม่มีวันหยุดตรงกัน หรือยังไม่ได้บันทึกข้อมูล</span>`;
+        }
+      } catch (e) {
+        console.error("Free days error:", e);
+      }
+    }
+
+    // Modal controls
+    function openOcrModal() {
+      document.getElementById('ocrModal').classList.remove('hidden');
+      document.getElementById('ocrModal').classList.add('flex');
+    }
+    function closeOcrModal() {
+      document.getElementById('ocrModal').classList.add('hidden');
+      document.getElementById('ocrModal').classList.remove('flex');
+    }
+
+    function openSettingsModal() {
+      document.getElementById('settingsModal').classList.remove('hidden');
+      document.getElementById('settingsModal').classList.add('flex');
+    }
+    function closeSettingsModal() {
+      document.getElementById('settingsModal').classList.add('hidden');
+      document.getElementById('settingsModal').classList.remove('flex');
+    }
+
+    let selectedFile = null;
+    function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (file) {
+        selectedFile = file;
+        document.getElementById('fileLabel').innerText = `📁 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      }
+    }
+
+    async function submitOcr() {
+      if (!selectedFile) {
+        alert("กรุณาเลือกไฟล์รูปภาพ หรือ PDF ตารางเวรก่อนครับ");
+        return;
+      }
+
+      const month = document.getElementById('ocrMonthSelect').value;
+      const year = document.getElementById('ocrYearSelect').value;
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('target_month', month);
+      formData.append('target_year', year);
+
+      document.getElementById('ocrLoading').classList.remove('hidden');
+      document.getElementById('ocrPreviewContainer').classList.add('hidden');
+      document.getElementById('btnStartOcr').disabled = true;
+
+      try {
+        const res = await fetch('/api/ocr/upload', {
+          method: 'POST',
+          body: formData
+        }).then(r => r.json());
+
+        ocrParsedData = res.data;
+        renderOcrPreview(res.data, res.persons);
+      } catch (e) {
+        alert("เกิดข้อผิดพลาดในการประมวลผล OCR: " + e.message);
+      } finally {
+        document.getElementById('ocrLoading').classList.add('hidden');
+        document.getElementById('btnStartOcr').disabled = false;
+      }
+    }
+
+    function renderOcrPreview(data, dbPersons) {
+      const container = document.getElementById('ocrPreviewContent');
+      container.innerHTML = '';
+
+      if (!data.parsed_shifts || data.parsed_shifts.length === 0) {
+        container.innerHTML = `<p class="text-rose-500">ไม่พบตารางเวรของบุคคลเป้าหมาย กรุณาตรวจสอบว่าชื่อในตารางเวรตรงกับการตั้งค่า</p>`;
+        document.getElementById('ocrPreviewContainer').classList.remove('hidden');
+        return;
+      }
+
+      data.parsed_shifts.forEach((item, idx) => {
+        const card = document.createElement('div');
+        card.className = "p-3 bg-slate-50 rounded-xl border border-slate-200";
+        
+        let shiftsSummary = item.shifts.map(s => {
+          const dNum = parseInt(s.date.split('-')[2]);
+          return `<span class="inline-block px-1.5 py-0.5 m-0.5 rounded bg-white border border-slate-200 text-[10px] font-medium">${dNum}: <b>${s.shift_code}</b></span>`;
+        }).join('');
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-bold text-slate-700">👤 ${item.person_name}</span>
+            <span class="text-xs text-sky-600 font-semibold">${item.shifts.length} วันที่พบ</span>
+          </div>
+          <div class="flex flex-wrap">${shiftsSummary}</div>
+        `;
+        container.appendChild(card);
+      });
+
+      document.getElementById('ocrPreviewContainer').classList.remove('hidden');
+    }
+
+    async function confirmSaveOcrShifts() {
+      if (!ocrParsedData || !ocrParsedData.parsed_shifts) return;
+
+      for (const item of ocrParsedData.parsed_shifts) {
+        if (!item.person_id) {
+          // Fallback to match by name
+          const p = persons.find(x => x.name.includes(item.person_name) || item.person_name.includes(x.name));
+          if (p) item.person_id = p.id;
+        }
+
+        if (item.person_id) {
+          await fetch('/api/shifts/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              person_id: item.person_id,
+              shifts: item.shifts
+            })
+          });
+        }
+      }
+
+      alert("🎉 บันทึกข้อมูลตารางเวรเข้าปฏิทินเรียบร้อยแล้ว!");
+      closeOcrModal();
+      shifts = await fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json());
+      renderAll();
+    }
+
+    async function saveSettings() {
+      const tomorrowTime = document.getElementById('settingTomorrowTime').value;
+      const tomorrowEnabled = document.getElementById('settingTomorrowEnabled').checked;
+      const todayTime = document.getElementById('settingTodayTime').value;
+      const todayEnabled = document.getElementById('settingTodayEnabled').checked;
+      const uploadEnabled = document.getElementById('settingUploadNotifyEnabled').checked;
+      const targetId = document.getElementById('settingTargetLineId').value.trim();
+
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notify_tomorrow_time: tomorrowTime,
+          notify_tomorrow_enabled: tomorrowEnabled,
+          notify_today_time: todayTime,
+          notify_today_enabled: todayEnabled,
+          notify_on_upload_enabled: uploadEnabled,
+          target_line_id: targetId
+        })
+      });
+
+      document.getElementById('headerTomorrowTime').innerText = tomorrowTime;
+      document.getElementById('headerTodayTime').innerText = todayTime;
+      alert("บันทึกการตั้งค่าเรียบร้อยแล้ว");
+      closeSettingsModal();
+    }
+
+    async function triggerTestReminder(mode = 'tomorrow') {
+      const resultEl = document.getElementById('testNotifyResult');
+      resultEl.classList.remove('hidden');
+      resultEl.className = "text-[11px] text-center mt-1 text-slate-500";
+      resultEl.innerText = mode === 'tomorrow' ? "กำลังส่งเตือนวันพรุ่งนี้..." : "กำลังส่งเตือนวันนี้...";
+
+      const targetId = document.getElementById('settingTargetLineId').value.trim();
+      const res = await fetch(`/api/notify/test?target_id=${encodeURIComponent(targetId)}&mode=${mode}`, { method: 'POST' }).then(r => r.json());
+
+      if (res.success) {
+        resultEl.className = "text-[11px] text-center mt-1 text-emerald-600 font-medium";
+        resultEl.innerText = "✅ ส่งข้อความ Flex Message เข้า LINE สำเร็จแล้ว!";
+      } else {
+        resultEl.className = "text-[11px] text-center mt-1 text-rose-500 font-medium";
+        resultEl.innerText = "⚠️ ส่งไม่สำเร็จ: " + (res.message || res.error);
+      }
+    }
+
+    function openEditDayModal(dateStr) {
+      selectedEditDate = dateStr;
+      const d = new Date(dateStr);
+      document.getElementById('editModalDateTitle').innerText = `แก้ไขเวร: ${d.getDate()} ${THAI_MONTHS[d.getMonth() + 1]} ${d.getFullYear() + 543}`;
+
+      const container = document.getElementById('editPersonsContainer');
+      container.innerHTML = '';
+
+      persons.forEach(p => {
+        const s = shifts.find(item => item.person_id === p.id && item.shift_date === dateStr);
+        const currentCode = s ? s.shift_code : '';
+
+        const row = document.createElement('div');
+        row.className = "space-y-1";
+        
+        let optionsHtml = '<option value="">-- ไม่ระบุ --</option>';
+        shiftTypes.forEach(st => {
+          optionsHtml += `<option value="${st.code}" ${st.code === currentCode ? 'selected' : ''}>${st.icon} ${st.code} - ${st.name}</option>`;
+        });
+
+        row.innerHTML = `
+          <label class="block text-xs font-semibold text-slate-700">${p.role === 'me' ? '🧑 ' : '👩 '}${p.name}</label>
+          <select id="editShift_${p.id}" class="w-full text-xs p-2 rounded-xl border border-slate-200 bg-white">
+            ${optionsHtml}
+          </select>
+        `;
+        container.appendChild(row);
+      });
+
+      document.getElementById('editDayModal').classList.remove('hidden');
+      document.getElementById('editDayModal').classList.add('flex');
+    }
+
+    function closeEditModal() {
+      document.getElementById('editDayModal').classList.add('hidden');
+      document.getElementById('editDayModal').classList.remove('flex');
+    }
+
+    async function saveDayEdits() {
+      for (const p of persons) {
+        const selectEl = document.getElementById(`editShift_${p.id}`);
+        const code = selectEl.value;
+        if (code) {
+          await fetch('/api/shifts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              person_id: p.id,
+              shift_date: selectedEditDate,
+              shift_code: code
+            })
+          });
+        }
+      }
+      closeEditModal();
+      shifts = await fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json());
+      renderAll();
+    }
+
+    // Initialize on load
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
