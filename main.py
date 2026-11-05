@@ -375,6 +375,26 @@ async def process_image_ocr_background(image_bytes: bytes, active_target: str):
         ocr_text = await run_typhoon_ocr(image_base64_url)
         parsed = await parse_shifts_with_ai(ocr_text, names, now.year, now.month)
 
+        parsed_shifts = parsed.get("parsed_shifts", [])
+        messaging_api, api_client = get_line_client()
+
+        if not parsed_shifts:
+            if messaging_api and active_target:
+                try:
+                    not_found_msg = (
+                        "⚠️ Typhoon OCR สแกนภาพแล้ว แต่ยังไม่พบชื่อที่ตรงกับคุณหรือแฟนในตารางเวรครับ\n\n"
+                        "💡 คำแนะนำ:\n"
+                        "1. หากภาพเอียงหรือกลับหัว กรุณาถ่ายภาพในแนวระนาบตรงๆ ให้เห็นหัวตารางและชื่อชัดเจน\n"
+                        "2. หรือสามารถเข้าตรวจสอบและกรอกเวรผ่านหน้าเว็บได้โดยตรงที่:\n"
+                        "https://couple-shift-bot.onrender.com"
+                    )
+                    await messaging_api.push_message(
+                        PushMessageRequest(to=active_target, messages=[TextMessage(text=not_found_msg)])
+                    )
+                finally:
+                    await api_client.close()
+            return
+
         if active_target:
             with Session(engine) as session:
                 pending_key = f"pending_shifts_{active_target}"
@@ -387,8 +407,7 @@ async def process_image_ocr_background(image_bytes: bytes, active_target: str):
 
         from services.line_service import build_ocr_confirm_flex_message
         confirm_flex = build_ocr_confirm_flex_message(parsed)
-        messaging_api, api_client = get_line_client()
-        if messaging_api:
+        if messaging_api and active_target:
             try:
                 await messaging_api.push_message(
                     PushMessageRequest(
@@ -401,6 +420,19 @@ async def process_image_ocr_background(image_bytes: bytes, active_target: str):
     except Exception as e:
         import logging
         logging.getLogger(__name__).error(f"Error in OCR background processing: {e}")
+        messaging_api, api_client = get_line_client()
+        if messaging_api and active_target:
+            try:
+                err_msg = (
+                    "⚠️ ขออภัยครับ ระบบใช้เวลาประมวลผลนานเกินกำหนด หรือสัญญาณภาพขัดข้อง\n\n"
+                    "💡 แนะนำให้ถ่ายภาพให้ชัดเจนในแนวตรง หรือสามารถเปิดดูตารางเวรบนเว็บได้ที่:\n"
+                    "https://couple-shift-bot.onrender.com"
+                )
+                await messaging_api.push_message(
+                    PushMessageRequest(to=active_target, messages=[TextMessage(text=err_msg)])
+                )
+            finally:
+                await api_client.close()
 
 # ----------------- LINE Webhook API -----------------
 @app.post("/api/line/webhook")

@@ -5,7 +5,7 @@ import re
 from typing import List, Dict, Any, Optional
 import httpx
 import pypdfium2 as pdfium
-from PIL import Image
+from PIL import Image, ImageOps
 from config import (
     TYPHOON_API_KEY,
     TYPHOON_BASE_URL,
@@ -13,9 +13,19 @@ from config import (
     TYPHOON_CHAT_MODEL
 )
 
-def image_to_base64(image_bytes: bytes, max_size=(2000, 2000)) -> str:
-    """Resize image if too large and convert to base64 data URL"""
+def image_to_base64(image_bytes: bytes, max_size=(1800, 1800)) -> str:
+    """Correct orientation, resize image if too large and convert to base64 data URL"""
     img = Image.open(io.BytesIO(image_bytes))
+    
+    # 1. Correct EXIF rotation from mobile cameras
+    img = ImageOps.exif_transpose(img)
+    
+    # 2. Check if a landscape table was captured vertically (height > width)
+    # Hospital duty rosters are landscape format
+    if img.height > img.width * 1.15:
+        # Rotate 90 degrees clockwise to make it landscape
+        img = img.rotate(270, expand=True)
+
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
     img.thumbnail(max_size, Image.Resampling.LANCZOS)
@@ -80,7 +90,7 @@ async def run_typhoon_ocr(image_base64_url: str) -> str:
         "max_tokens": 4096
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(
             f"{TYPHOON_BASE_URL}/chat/completions",
             headers=headers,
@@ -176,7 +186,7 @@ async def parse_shifts_with_ai(
         "max_tokens": 4096
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(
             f"{TYPHOON_BASE_URL}/chat/completions",
             headers=headers,
