@@ -45,6 +45,7 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import (
     MessageEvent,
+    JoinEvent,
     TextMessageContent,
     ImageMessageContent,
     FileMessageContent
@@ -485,6 +486,38 @@ async def line_webhook(request: Request, x_line_signature: Optional[str] = Heade
 
     try:
         for event in events:
+            # Handle Bot Joining a Group / Room
+            if isinstance(event, JoinEvent):
+                group_id = getattr(event.source, "group_id", None) or getattr(event.source, "room_id", None)
+                if group_id:
+                    with Session(engine) as session:
+                        setting = session.exec(select(SystemSetting).where(SystemSetting.key == "target_line_id")).first()
+                        if setting:
+                            setting.value = group_id
+                            session.add(setting)
+                        else:
+                            session.add(SystemSetting(key="target_line_id", value=group_id))
+                        session.commit()
+
+                    welcome_text = (
+                        "🎉 สวัสดีครับทุกคน! บอทตารางเวรคู่รักพร้อมดูแลแล้วครับ 💕\n\n"
+                        "✨ บันทึกกลุ่มนี้เป็นเป้าหมายแจ้งเตือนเวรอัตโนมัติเรียบร้อยครับ:\n"
+                        "• แจ้งเตือนเวรวันพรุ่งนี้ (ล่วงหน้า 20:00 น.)\n"
+                        "• แจ้งเตือนเวรประจำวัน (เช้า 06:00 น.)\n\n"
+                        "💡 คำสั่งที่ใช้ได้ในกลุ่ม:\n"
+                        "• พิมพ์ 'เวรวันนี้' หรือ 'เวรพรุ่งนี้'\n"
+                        "• พิมพ์ 'วันว่าง' เพื่อดูวันหยุดตรงกัน\n"
+                        "• พิมพ์ 'เปลี่ยนเวร วันที่ 12 แฟนเป็น ด'\n"
+                        "• ส่งรูปตารางเวรเข้ามาเพื่อสแกนด้วย Typhoon OCR ได้เลยครับ"
+                    )
+                    await messaging_api.reply_message(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token,
+                            messages=[TextMessage(text=welcome_text)]
+                        )
+                    )
+                continue
+
             if not isinstance(event, MessageEvent):
                 continue
 
