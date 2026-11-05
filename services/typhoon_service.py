@@ -96,7 +96,7 @@ async def run_typhoon_ocr(image_base64_url: str) -> str:
         "presence_penalty": 0.2
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         response = await client.post(
             f"{TYPHOON_BASE_URL}/chat/completions",
             headers=headers,
@@ -192,7 +192,7 @@ async def parse_shifts_with_ai(
         "max_tokens": 2048
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         response = await client.post(
             f"{TYPHOON_BASE_URL}/chat/completions",
             headers=headers,

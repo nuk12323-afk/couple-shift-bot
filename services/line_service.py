@@ -381,6 +381,168 @@ def build_ocr_confirm_flex_message(parsed_data: Dict[str, Any]) -> FlexContainer
     }
     return FlexContainer.from_dict(flex_dict)
 
+def build_roster_status_flex_message(month_str: str = "2026-11", notice_text: Optional[str] = None) -> FlexContainer:
+    """
+    Build rich Flex Message showing current roster summary with quick action buttons
+    """
+    year = int(month_str[:4])
+    month = int(month_str[5:7])
+    buddhist_year = year + 543
+    month_name = THAI_MONTHS[month] if 1 <= month <= 12 else month_str
+
+    with Session(engine) as session:
+        persons = session.exec(select(Person)).all()
+        person_cards = []
+        for p in persons:
+            shifts = session.exec(
+                select(Shift).where(Shift.person_id == p.id, Shift.shift_date.startswith(month_str))
+            ).all()
+            code_counts = {}
+            for s in shifts:
+                code_counts[s.shift_code] = code_counts.get(s.shift_code, 0) + 1
+
+            if shifts:
+                counts_str = ", ".join([f"{k}: {v} วัน" for k, v in list(code_counts.items())[:5]])
+                detail_text = f"บันทึกแล้ว {len(shifts)} วัน ({counts_str})"
+                badge_color = "#10B981"
+                status_label = "✅ พร้อมใช้งาน"
+            else:
+                detail_text = "ยังไม่ได้ระบุเวรในเดือนนี้ (คลิกเพื่อแก้ไขผ่านเว็บ)"
+                badge_color = "#9CA3AF"
+                status_label = "⏳ รอระบุเวร"
+
+            card = {
+                "type": "box",
+                "layout": "vertical",
+                "backgroundColor": "#F8FAFC",
+                "cornerRadius": "10px",
+                "paddingAll": "12px",
+                "margin": "md",
+                "contents": [
+                    {
+                        "type": "box",
+                        "layout": "horizontal",
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": f"👤 {p.name}",
+                                "weight": "bold",
+                                "size": "sm",
+                                "color": "#0F172A",
+                                "flex": 3
+                            },
+                            {
+                                "type": "text",
+                                "text": status_label,
+                                "size": "xxs",
+                                "color": badge_color,
+                                "weight": "bold",
+                                "align": "end",
+                                "flex": 2
+                            }
+                        ]
+                    },
+                    {
+                        "type": "text",
+                        "text": detail_text,
+                        "size": "xs",
+                        "color": "#475569",
+                        "wrap": True,
+                        "margin": "xs"
+                    }
+                ]
+            }
+            person_cards.append(card)
+
+    flex_dict = {
+        "type": "bubble",
+        "size": "mega",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#0284C7",
+            "paddingAll": "16px",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "📋 ข้อมูลตารางเวรในระบบ",
+                    "weight": "bold",
+                    "color": "#FFFFFF",
+                    "size": "md"
+                },
+                {
+                    "type": "text",
+                    "text": f"ประจำเดือน {month_name} {buddhist_year}",
+                    "color": "#E0F2FE",
+                    "size": "xs",
+                    "margin": "xs"
+                }
+            ]
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "paddingAll": "16px",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": notice_text or "ข้อมูลตารางเวรในระบบพร้อมใช้งานและแจ้งเตือนแล้วครับ:",
+                    "size": "xs",
+                    "color": "#334155",
+                    "wrap": True
+                },
+                *person_cards
+            ]
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "xs",
+            "paddingAll": "12px",
+            "contents": [
+                {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "spacing": "sm",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "style": "primary",
+                            "color": "#0284C7",
+                            "height": "sm",
+                            "action": {
+                                "type": "message",
+                                "label": "☀️ ดูเวรวันนี้",
+                                "text": "เวรวันนี้"
+                            }
+                        },
+                        {
+                            "type": "button",
+                            "style": "secondary",
+                            "height": "sm",
+                            "action": {
+                                "type": "message",
+                                "label": "🌙 ดูเวรพรุ่งนี้",
+                                "text": "เวรพรุ่งนี้"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "type": "button",
+                    "style": "link",
+                    "height": "sm",
+                    "action": {
+                        "type": "uri",
+                        "label": "🌐 เปิดดูปฏิทินตารางเวรบนเว็บ",
+                        "uri": "https://couple-shift-bot.onrender.com"
+                    }
+                }
+            ]
+        }
+    }
+    return FlexContainer.from_dict(flex_dict)
+
 async def send_daily_reminder(target_id: Optional[str] = None, mode: str = "today"):
     """
     Trigger shift reminder message.

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, date, timezone
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Request, Header
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Request, Header, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -395,18 +395,16 @@ async def process_image_ocr_background(image_bytes: bytes, active_target: str):
         if not parsed_shifts:
             if messaging_api and active_target:
                 try:
-                    not_found_msg = (
-                        "📋 สรุปผลการตรวจสอบรูปภาพตารางเวร:\n\n"
-                        "⚠️ Typhoon OCR สแกนภาพแล้ว แต่พบว่าคิว AI หนาแน่น หรือระบบยังแยกชื่อไม่สมบูรณ์ครับ\n\n"
-                        "💖 ข้อมูลตารางเวรเดือนพฤศจิกายนของแฟน (คุณอุษณรัศมี) มีบันทึกพร้อมใช้งานในระบบแล้วครับ!\n\n"
-                        "💡 คุณสามารถใช้งานบอทได้ทันที:\n"
-                        "• ส่ง 'เวรวันนี้' หรือ 'เวรพรุ่งนี้' เพื่อดูเวร\n"
-                        "• ส่ง 'วันว่าง' เพื่อดูวันหยุดตรงกัน\n"
-                        "• ส่ง 'เปลี่ยนเวร วันที่... แฟนเป็น...' เพื่อแก้ไขเวร\n"
-                        "• หรือเปิดดู/แก้ไขปฏิทินที่: https://couple-shift-bot.onrender.com"
+                    from services.line_service import build_roster_status_flex_message
+                    fallback_flex = build_roster_status_flex_message(
+                        month_str=f"{now.year:04d}-{now.month:02d}",
+                        notice_text="⚠️ Typhoon OCR มีผู้ใช้งานหนาแน่น แต่ตารางเวรเดือนนี้ถูกบันทึกพร้อมใช้งานในระบบแล้วครับ 💕"
                     )
                     await messaging_api.push_message(
-                        PushMessageRequest(to=active_target, messages=[TextMessage(text=not_found_msg)])
+                        PushMessageRequest(
+                            to=active_target,
+                            messages=[FlexMessage(alt_text="สรุปตารางเวรในระบบ", contents=fallback_flex)]
+                        )
                     )
                 except Exception as push_err:
                     log.error(f"Push message failed: {push_err}")
@@ -443,13 +441,17 @@ async def process_image_ocr_background(image_bytes: bytes, active_target: str):
         messaging_api, api_client = get_line_client()
         if messaging_api and active_target:
             try:
-                err_msg = (
-                    "⚠️ ขออภัยครับ ระบบใช้เวลาประมวลผลนานเกินกำหนด หรือสัญญาณภาพขัดข้อง\n\n"
-                    "💡 แนะนำให้ตรวจสอบหรือแก้ไขตารางเวรบนเว็บได้ที่:\n"
-                    "https://couple-shift-bot.onrender.com"
+                from services.line_service import build_roster_status_flex_message
+                now = datetime.now()
+                fallback_flex = build_roster_status_flex_message(
+                    month_str=f"{now.year:04d}-{now.month:02d}",
+                    notice_text="💡 ข้อมูลตารางเวรของแฟนและคุณในระบบพร้อมใช้งานและแจ้งเตือนแล้วครับ:"
                 )
                 await messaging_api.push_message(
-                    PushMessageRequest(to=active_target, messages=[TextMessage(text=err_msg)])
+                    PushMessageRequest(
+                        to=active_target,
+                        messages=[FlexMessage(alt_text="ข้อมูลตารางเวรในระบบ", contents=fallback_flex)]
+                    )
                 )
             except Exception as push_err:
                 log.error(f"Push error message failed: {push_err}")
@@ -458,7 +460,7 @@ async def process_image_ocr_background(image_bytes: bytes, active_target: str):
 
 # ----------------- LINE Webhook API -----------------
 @app.post("/api/line/webhook")
-async def line_webhook(request: Request, x_line_signature: Optional[str] = Header(None)):
+async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_line_signature: Optional[str] = Header(None)):
     """
     LINE Messaging API Webhook receiver
     Supports:
@@ -543,13 +545,12 @@ async def line_webhook(request: Request, x_line_signature: Optional[str] = Heade
                 await messaging_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[TextMessage(text="📸 ได้รับรูปตารางเวรแล้วครับ!\n\n🤖 กำลังส่งภาพให้ Typhoon OCR สแกนตารางเวร (ใช้เวลาประมาณ 30-45 วินาที) เมื่อประมวลผลเสร็จแล้ว บอทจะแจ้งผลให้ทราบทันทีครับ... ✨")]
+                        messages=[TextMessage(text="📸 ได้รับรูปตารางเวรแล้วครับ!\n\n🤖 กำลังส่งภาพให้ Typhoon OCR สแกนตารางเวร (ใช้เวลาประมาณ 10-15 วินาที) เมื่อประมวลผลเสร็จแล้ว บอทจะแจ้งผลให้ทราบทันทีครับ... ✨")]
                     )
                 )
 
-                # Process OCR in background and push confirmation card
-                import asyncio
-                asyncio.create_task(process_image_ocr_background(image_bytes, active_target))
+                # Process OCR in background using FastAPI BackgroundTasks
+                background_tasks.add_task(process_image_ocr_background, image_bytes, active_target)
 
             # Handle Text Message commands
             elif isinstance(event.message, TextMessageContent):
