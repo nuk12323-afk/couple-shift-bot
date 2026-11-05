@@ -1,6 +1,6 @@
 from sqlmodel import Session, SQLModel, create_engine, select
 from config import DATABASE_URL, USER1_NAME, USER2_NAME
-from models import Person, ShiftType, SystemSetting
+from models import Person, Shift, ShiftType, SystemSetting
 
 # SQLite database engine
 engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
@@ -11,11 +11,25 @@ def init_db():
         # 1. Initialize default persons if empty
         existing_persons = session.exec(select(Person)).all()
         if not existing_persons:
-            p1 = Person(name=USER1_NAME, role="me", color="#3B82F6")
-            p2 = Person(name=USER2_NAME, role="partner", color="#EC4899")
+            p1 = Person(name="นายภัทรพงษ์ นวลขาว", role="me", color="#3B82F6")
+            p2 = Person(name="น.ส.อุษณรัศมี ชนีมาศ", role="partner", color="#EC4899")
             session.add(p1)
             session.add(p2)
             session.commit()
+
+        # Seed November 2026 shifts for partner if shifts table is empty
+        existing_shifts = session.exec(select(Shift)).first()
+        if not existing_shifts:
+            p2 = session.exec(select(Person).where(Person.role == "partner")).first()
+            if p2:
+                shifts_map = {
+                    1: 'X/C', 2: 'C', 3: 'ปกติ', 4: 'ปกติ', 5: 'N/C', 6: 'N', 7: 'Off', 8: 'Off', 9: 'ปกติ', 10: 'C',
+                    11: 'N', 12: 'บ', 13: 'ด', 14: 'Off', 15: 'Off', 16: 'C', 17: 'ปกติ', 18: 'ปกติ', 19: 'N', 20: 'N/C',
+                    21: 'X/C', 22: 'X/C', 23: 'บ', 24: 'ด', 25: 'ปกติ', 26: 'N', 27: 'N/C', 28: 'X/C', 29: 'X/C', 30: 'C'
+                }
+                for day, code in shifts_map.items():
+                    session.add(Shift(person_id=p2.id, shift_date=f"2026-11-{day:02d}", shift_code=code))
+                session.commit()
 
         # 2. Initialize default shift types if empty
         existing_types = session.exec(select(ShiftType)).all()

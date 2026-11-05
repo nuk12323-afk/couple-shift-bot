@@ -363,6 +363,45 @@ async def upload_schedule_for_ocr(
         "persons": [{"id": p.id, "name": p.name} for p in persons]
     }
 
+async def process_image_ocr_background(image_bytes: bytes, active_target: str):
+    """Background task to run Typhoon OCR and push confirmation Flex Message to chat"""
+    try:
+        image_base64_url = image_to_base64(image_bytes)
+        now = datetime.now()
+        with Session(engine) as session:
+            persons = session.exec(select(Person)).all()
+            names = [p.name for p in persons]
+
+        ocr_text = await run_typhoon_ocr(image_base64_url)
+        parsed = await parse_shifts_with_ai(ocr_text, names, now.year, now.month)
+
+        if active_target:
+            with Session(engine) as session:
+                pending_key = f"pending_shifts_{active_target}"
+                entry = session.exec(select(SystemSetting).where(SystemSetting.key == pending_key)).first()
+                if entry:
+                    entry.value = json.dumps(parsed, ensure_ascii=False)
+                else:
+                    session.add(SystemSetting(key=pending_key, value=json.dumps(parsed, ensure_ascii=False)))
+                session.commit()
+
+        from services.line_service import build_ocr_confirm_flex_message
+        confirm_flex = build_ocr_confirm_flex_message(parsed)
+        messaging_api, api_client = get_line_client()
+        if messaging_api:
+            try:
+                await messaging_api.push_message(
+                    PushMessageRequest(
+                        to=active_target,
+                        messages=[FlexMessage(alt_text="ผลการอ่านตารางเวร กดยืนยันเพื่อบันทึก", contents=confirm_flex)]
+                    )
+                )
+            finally:
+                await api_client.close()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Error in OCR background processing: {e}")
+
 # ----------------- LINE Webhook API -----------------
 @app.post("/api/line/webhook")
 async def line_webhook(request: Request, x_line_signature: Optional[str] = Header(None)):
@@ -413,37 +452,18 @@ async def line_webhook(request: Request, x_line_signature: Optional[str] = Heade
             if isinstance(event.message, ImageMessageContent):
                 blob_client = AsyncMessagingApiBlob(api_client)
                 image_bytes = await blob_client.get_message_content(event.message.id)
-                image_base64_url = image_to_base64(image_bytes)
 
-                # Run Typhoon OCR
-                now = datetime.now()
-                with Session(engine) as session:
-                    persons = session.exec(select(Person)).all()
-                    names = [p.name for p in persons]
-
-                ocr_text = await run_typhoon_ocr(image_base64_url)
-                parsed = await parse_shifts_with_ai(ocr_text, names, now.year, now.month)
-
-                # Save pending OCR data for this chat session
-                if active_target:
-                    with Session(engine) as session:
-                        pending_key = f"pending_shifts_{active_target}"
-                        entry = session.exec(select(SystemSetting).where(SystemSetting.key == pending_key)).first()
-                        if entry:
-                            entry.value = json.dumps(parsed, ensure_ascii=False)
-                        else:
-                            session.add(SystemSetting(key=pending_key, value=json.dumps(parsed, ensure_ascii=False)))
-                        session.commit()
-
-                # Reply with interactive Flex Message asking for user confirmation
-                from services.line_service import build_ocr_confirm_flex_message
-                confirm_flex = build_ocr_confirm_flex_message(parsed)
+                # Send immediate friendly receipt reply
                 await messaging_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[FlexMessage(alt_text="ผลการอ่านตารางเวร กดยืนยันเพื่อบันทึก", contents=confirm_flex)]
+                        messages=[TextMessage(text="📸 ได้รับรูปตารางเวรแล้วครับ!\n\n🤖 Typhoon OCR กำลังอ่านตารางเวรและภาษาไทย กรุณารอสักครู่ (ประมาณ 10-20 วินาที) แล้วบอทจะส่งการ์ดสรุปมาให้ยืนยันนะครับ... ✨")]
                     )
                 )
+
+                # Process OCR in background and push confirmation card
+                import asyncio
+                asyncio.create_task(process_image_ocr_background(image_bytes, active_target))
 
             # Handle Text Message commands
             elif isinstance(event.message, TextMessageContent):
