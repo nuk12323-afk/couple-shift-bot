@@ -13,7 +13,7 @@ from config import (
     TYPHOON_CHAT_MODEL
 )
 
-def image_to_base64(image_bytes: bytes, max_size=(1800, 1800)) -> str:
+def image_to_base64(image_bytes: bytes, max_size=(1280, 1280)) -> str:
     """Correct orientation, resize image if too large and convert to base64 data URL"""
     img = Image.open(io.BytesIO(image_bytes))
     
@@ -30,7 +30,7 @@ def image_to_base64(image_bytes: bytes, max_size=(1800, 1800)) -> str:
         img = img.convert("RGB")
     img.thumbnail(max_size, Image.Resampling.LANCZOS)
     buffered = io.BytesIO()
-    img.save(buffered, format="JPEG", quality=85)
+    img.save(buffered, format="JPEG", quality=82)
     encoded = base64.b64encode(buffered.getvalue()).decode("utf-8")
     return f"data:image/jpeg;base64,{encoded}"
 
@@ -75,7 +75,11 @@ async def run_typhoon_ocr(image_base64_url: str) -> str:
                 "content": [
                     {
                         "type": "text",
-                        "text": "กรุณาอ่านตารางเวรในภาพนี้ และแปลงข้อมูลตารางเวรออกมาเป็นรูปแบบ Markdown Table ให้ครบถ้วนแม่นยำ ทั้งชื่อคน วันที่ และรหัสเวร (เช่น ช, บ, ด, Off)"
+                        "text": (
+                            "กรุณาอ่านข้อความและตารางทั้งหมดในภาพนี้ทีละบรรทัด "
+                            "ระบุลำดับ ชื่อ-สกุล และตัวอักษรเวรของแต่ละวัน (1 ถึง 31) ให้ครบถ้วน ชัดเจน "
+                            "ห้ามใส่เส้นคั่นตาราง Markdown ซ้ำๆ เช่น | --- | เพื่อความกระชับ"
+                        )
                     },
                     {
                         "type": "image_url",
@@ -86,11 +90,13 @@ async def run_typhoon_ocr(image_base64_url: str) -> str:
                 ]
             }
         ],
-        "temperature": 0.1,
-        "max_tokens": 4096
+        "temperature": 0.2,
+        "max_tokens": 2048,
+        "frequency_penalty": 0.5,
+        "presence_penalty": 0.2
     }
 
-    async with httpx.AsyncClient(timeout=180.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
             f"{TYPHOON_BASE_URL}/chat/completions",
             headers=headers,
@@ -183,10 +189,10 @@ async def parse_shifts_with_ai(
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.1,
-        "max_tokens": 4096
+        "max_tokens": 2048
     }
 
-    async with httpx.AsyncClient(timeout=180.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
             f"{TYPHOON_BASE_URL}/chat/completions",
             headers=headers,

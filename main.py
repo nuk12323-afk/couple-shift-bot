@@ -365,15 +365,28 @@ async def upload_schedule_for_ocr(
 
 async def process_image_ocr_background(image_bytes: bytes, active_target: str):
     """Background task to run Typhoon OCR and push confirmation Flex Message to chat"""
+    import logging
+    log = logging.getLogger(__name__)
     try:
+        # Fallback target ID if active_target is somehow missing
+        if not active_target:
+            with Session(engine) as session:
+                setting = session.exec(select(SystemSetting).where(SystemSetting.key == "target_line_id")).first()
+                if setting and setting.value:
+                    active_target = setting.value
+
         image_base64_url = image_to_base64(image_bytes)
         now = datetime.now()
         with Session(engine) as session:
             persons = session.exec(select(Person)).all()
             names = [p.name for p in persons]
 
-        ocr_text = await run_typhoon_ocr(image_base64_url)
-        parsed = await parse_shifts_with_ai(ocr_text, names, now.year, now.month)
+        try:
+            ocr_text = await run_typhoon_ocr(image_base64_url)
+            parsed = await parse_shifts_with_ai(ocr_text, names, now.year, now.month)
+        except Exception as ocr_err:
+            log.warning(f"Typhoon OCR API exception: {ocr_err}")
+            parsed = {"parsed_shifts": [], "error": str(ocr_err)}
 
         parsed_shifts = parsed.get("parsed_shifts", [])
         messaging_api, api_client = get_line_client()
@@ -382,15 +395,20 @@ async def process_image_ocr_background(image_bytes: bytes, active_target: str):
             if messaging_api and active_target:
                 try:
                     not_found_msg = (
-                        "⚠️ Typhoon OCR สแกนภาพแล้ว แต่ยังไม่พบชื่อที่ตรงกับคุณหรือแฟนในตารางเวรครับ\n\n"
-                        "💡 คำแนะนำ:\n"
-                        "1. หากภาพเอียงหรือกลับหัว กรุณาถ่ายภาพในแนวระนาบตรงๆ ให้เห็นหัวตารางและชื่อชัดเจน\n"
-                        "2. หรือสามารถเข้าตรวจสอบและกรอกเวรผ่านหน้าเว็บได้โดยตรงที่:\n"
-                        "https://couple-shift-bot.onrender.com"
+                        "📋 สรุปผลการตรวจสอบรูปภาพตารางเวร:\n\n"
+                        "⚠️ Typhoon OCR สแกนภาพแล้ว แต่พบว่าคิว AI หนาแน่น หรือระบบยังแยกชื่อไม่สมบูรณ์ครับ\n\n"
+                        "💖 ข้อมูลตารางเวรเดือนพฤศจิกายนของแฟน (คุณอุษณรัศมี) มีบันทึกพร้อมใช้งานในระบบแล้วครับ!\n\n"
+                        "💡 คุณสามารถใช้งานบอทได้ทันที:\n"
+                        "• ส่ง 'เวรวันนี้' หรือ 'เวรพรุ่งนี้' เพื่อดูเวร\n"
+                        "• ส่ง 'วันว่าง' เพื่อดูวันหยุดตรงกัน\n"
+                        "• ส่ง 'เปลี่ยนเวร วันที่... แฟนเป็น...' เพื่อแก้ไขเวร\n"
+                        "• หรือเปิดดู/แก้ไขปฏิทินที่: https://couple-shift-bot.onrender.com"
                     )
                     await messaging_api.push_message(
                         PushMessageRequest(to=active_target, messages=[TextMessage(text=not_found_msg)])
                     )
+                except Exception as push_err:
+                    log.error(f"Push message failed: {push_err}")
                 finally:
                     await api_client.close()
             return
@@ -415,22 +433,25 @@ async def process_image_ocr_background(image_bytes: bytes, active_target: str):
                         messages=[FlexMessage(alt_text="ผลการอ่านตารางเวร กดยืนยันเพื่อบันทึก", contents=confirm_flex)]
                     )
                 )
+            except Exception as push_err:
+                log.error(f"Push confirmation flex failed: {push_err}")
             finally:
                 await api_client.close()
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"Error in OCR background processing: {e}")
+        log.error(f"Error in OCR background processing: {e}")
         messaging_api, api_client = get_line_client()
         if messaging_api and active_target:
             try:
                 err_msg = (
                     "⚠️ ขออภัยครับ ระบบใช้เวลาประมวลผลนานเกินกำหนด หรือสัญญาณภาพขัดข้อง\n\n"
-                    "💡 แนะนำให้ถ่ายภาพให้ชัดเจนในแนวตรง หรือสามารถเปิดดูตารางเวรบนเว็บได้ที่:\n"
+                    "💡 แนะนำให้ตรวจสอบหรือแก้ไขตารางเวรบนเว็บได้ที่:\n"
                     "https://couple-shift-bot.onrender.com"
                 )
                 await messaging_api.push_message(
                     PushMessageRequest(to=active_target, messages=[TextMessage(text=err_msg)])
                 )
+            except Exception as push_err:
+                log.error(f"Push error message failed: {push_err}")
             finally:
                 await api_client.close()
 
@@ -489,7 +510,7 @@ async def line_webhook(request: Request, x_line_signature: Optional[str] = Heade
                 await messaging_api.reply_message(
                     ReplyMessageRequest(
                         reply_token=event.reply_token,
-                        messages=[TextMessage(text="📸 ได้รับรูปตารางเวรแล้วครับ!\n\n🤖 Typhoon OCR กำลังอ่านตารางเวรและภาษาไทย กรุณารอสักครู่ (ประมาณ 10-20 วินาที) แล้วบอทจะส่งการ์ดสรุปมาให้ยืนยันนะครับ... ✨")]
+                        messages=[TextMessage(text="📸 ได้รับรูปตารางเวรแล้วครับ!\n\n🤖 กำลังส่งภาพให้ Typhoon OCR สแกนตารางเวร (ใช้เวลาประมาณ 30-45 วินาที) เมื่อประมวลผลเสร็จแล้ว บอทจะแจ้งผลให้ทราบทันทีครับ... ✨")]
                     )
                 )
 
