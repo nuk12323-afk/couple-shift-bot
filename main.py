@@ -38,6 +38,7 @@ from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
     AsyncMessagingApi,
     AsyncMessagingApiBlob,
+    PushMessageRequest,
     ReplyMessageRequest,
     TextMessage,
     FlexMessage,

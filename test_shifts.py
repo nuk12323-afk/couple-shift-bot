@@ -26,18 +26,22 @@ with Session(engine) as session:
     print(f"✅ Found {len(types)} shift types: {[t.code for t in types]}")
     assert len(types) >= 5, "Should have standard shift types"
 
-    # Add shifts
-    today_str = date.today().strftime("%Y-%m-%d")
-    s1 = Shift(person_id=persons[0].id, shift_date=today_str, shift_code="ช")
-    s2 = Shift(person_id=persons[1].id, shift_date=today_str, shift_code="Off")
-    session.add(s1)
-    session.add(s2)
+    # Add test shifts using a mock date so we don't overwrite real November 2026 shifts
+    test_date_str = "2099-01-01"
+    s1 = session.exec(select(Shift).where(Shift.person_id == persons[0].id, Shift.shift_date == test_date_str)).first()
+    if not s1:
+        s1 = Shift(person_id=persons[0].id, shift_date=test_date_str, shift_code="ช")
+        session.add(s1)
+    s2 = session.exec(select(Shift).where(Shift.person_id == persons[1].id, Shift.shift_date == test_date_str)).first()
+    if not s2:
+        s2 = Shift(person_id=persons[1].id, shift_date=test_date_str, shift_code="Off")
+        session.add(s2)
     session.commit()
-    print("✅ Created test shifts for today")
+    print("✅ Created test shifts for mock date")
 
 # Test Line Flex Message Builder
-shifts_data = get_today_shifts(today_str)
-flex = build_daily_flex_message(date.today(), shifts_data, "☀️ ตารางเวรวันนี้ (07:30 น.)")
+shifts_data = get_today_shifts(test_date_str)
+flex = build_daily_flex_message(date(2099, 1, 1), shifts_data, "☀️ ตารางเวรวันนี้ (07:30 น.)")
 assert flex is not None
 print("✅ Generated 07:30 Daily Flex Message successfully!")
 
