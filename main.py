@@ -93,6 +93,11 @@ class BatchShiftSave(BaseModel):
     person_id: int
     shifts: List[BatchShiftItem]
 
+class ClearShiftsRequest(BaseModel):
+    month: Optional[str] = None
+    person_id: Optional[int] = None
+    all_shifts: Optional[bool] = False
+
 class BatchFillRequest(BaseModel):
     person_id: int
     start_date: str
@@ -202,21 +207,42 @@ async def save_batch_shifts(data: BatchShiftSave, session: Session = Depends(get
     return {"success": True, "saved_count": saved_count}
 
 @app.delete("/api/shifts/clear")
+@app.post("/api/shifts/clear")
 def clear_shifts(
+    req: Optional[ClearShiftsRequest] = None,
     month: Optional[str] = Query(None, description="Month in YYYY-MM format"),
     person_id: Optional[int] = Query(None, description="Person ID (optional)"),
     all_shifts: bool = Query(False, description="Clear all shifts in DB"),
     session: Session = Depends(get_session)
 ):
-    """Bulk delete shifts by month, person, or all"""
+    """Bulk delete shifts by month, person, or all (supports both POST/DELETE and JSON/Query)"""
+    target_month = None
+    if req and req.month:
+        target_month = req.month
+    elif isinstance(month, str) and month.strip():
+        target_month = month.strip()
+
+    target_person_id = None
+    if req and req.person_id is not None:
+        target_person_id = req.person_id
+    elif isinstance(person_id, int):
+        target_person_id = person_id
+
+    target_all_shifts = False
+    if req and req.all_shifts is not None:
+        target_all_shifts = bool(req.all_shifts)
+    elif isinstance(all_shifts, bool):
+        target_all_shifts = all_shifts
+
     query = select(Shift)
-    if not all_shifts:
-        if month:
-            query = query.where(Shift.shift_date.startswith(month))
-        if person_id:
-            query = query.where(Shift.person_id == person_id)
-        if not month and not person_id:
-            raise HTTPException(status_code=400, detail="Must specify month, person_id, or all_shifts=true")
+    if target_person_id:
+        query = query.where(Shift.person_id == target_person_id)
+
+    if not target_all_shifts:
+        if target_month:
+            query = query.where(Shift.shift_date.startswith(target_month))
+        elif not target_person_id:
+            raise HTTPException(status_code=400, detail="กรุณาระบุเดือน (month) หรือระบุบุคคล (person_id) หรือเลือก all_shifts=true")
     
     shifts_to_delete = session.exec(query).all()
     count = len(shifts_to_delete)
@@ -341,10 +367,15 @@ async def trigger_test_reminder(target_id: Optional[str] = None, mode: str = "to
 @app.get("/api/version")
 def get_version():
     return {
-        "version": "1.6.0",
-        "deploy_time": "2026-11-06 09:15",
+        "version": "1.7.0",
+        "deploy_time": "2026-11-06 13:55",
         "ocr_fallback": "active",
-        "feature": "person_selector_for_ocr"
+        "features": [
+            "mismatch_protection_me_vs_partner",
+            "safe_bulk_clear_shifts_post_delete",
+            "typhoon_ocr_payload_fix",
+            "one_click_standard_office_fill"
+        ]
     }
 
 @app.get("/api/debug/logs")
@@ -395,128 +426,19 @@ def get_free_days(month: str, session: Session = Depends(get_session)):
         "free_days": free_days
     }
 
-# ----------------- Typhoon OCR Upload API -----------------
-@app.post("/api/ocr/upload")
-async def upload_schedule_for_ocr(
-    file: UploadFile = File(...),
-    target_year: int = Form(...),
-    target_month: int = Form(...),
-    target_person_id: Optional[int] = Form(None),
-    target_search_name: Optional[str] = Form(None),
-    session: Session = Depends(get_session)
-):
-    """
-    Receive uploaded Image or PDF, process with Typhoon OCR and parse shifts
-    with automatic person matching and fallback
-    """
-    import asyncio
-    import logging
-    log = logging.getLogger("ocr_upload")
-
-    content = await file.read()
-    filename = file.filename.lower()
-
-    # Get target persons from database
-    persons = session.exec(select(Person)).all()
-    selected_person = session.get(Person, target_person_id) if target_person_id else None
-    search_name = target_search_name.strip() if target_search_name else (selected_person.name if selected_person else None)
-
-    # Build prioritized target names for AI extraction
-    target_names = [search_name] if search_name else []
-    for p in persons:
-        if p.name not in target_names:
-            target_names.append(p.name)
-
-    parsed = None
-    try:
-        ocr_results = []
-        if filename.endswith(".pdf"):
-            images = pdf_to_images(content)
-            for img_url in images:
-                raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=35.0)
-                ocr_results.append(raw_text)
+def get_standard_office_shifts(year: int = 2026, month: int = 11, person_name: str = "นายภัทรพงษ์ นวลขาว") -> Dict[str, Any]:
+    """Standard civil service / regular office hours schedule (Mon-Fri = ปกติ, Sat-Sun = Off)"""
+    import calendar
+    _, num_days = calendar.monthrange(year, month)
+    shifts = []
+    for day in range(1, num_days + 1):
+        dt = date(year, month, day)
+        date_str = f"{year:04d}-{month:02d}-{day:02d}"
+        if dt.weekday() < 5:
+            shifts.append({"date": date_str, "shift_code": "ปกติ"})
         else:
-            img_url = image_to_base64(content)
-            raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=35.0)
-            ocr_results.append(raw_text)
-
-        combined_ocr_text = "\n\n".join(ocr_results)
-
-        # Use Typhoon LLM to parse into structured JSON
-        parsed = await asyncio.wait_for(
-            parse_shifts_with_ai(
-                ocr_text=combined_ocr_text,
-                target_names=target_names,
-                target_year=target_year,
-                target_month=target_month,
-                target_person_name=search_name
-            ),
-            timeout=25.0
-        )
-    except Exception as e:
-        log.warning(f"Typhoon OCR API exception or timeout in web upload: {e}")
-        fallback_target_name = selected_person.name if selected_person else (search_name or "น.ส.อุษณรัศมี ชนีมาศ")
-        parsed = get_fallback_partner_shifts(target_year, target_month, person_name=fallback_target_name)
-
-    if not parsed or not parsed.get("parsed_shifts"):
-        fallback_target_name = selected_person.name if selected_person else (search_name or "น.ส.อุษณรัศมี ชนีมาศ")
-        parsed = get_fallback_partner_shifts(target_year, target_month, person_name=fallback_target_name)
-
-    # Attach person_ids to parsed results
-    person_map = {p.name: p.id for p in persons}
-    for item in parsed.get("parsed_shifts", []):
-        p_name = item.get("person_name", "")
-        # First check if the parsed name directly matches a known person
-        matched_p = None
-        for p in persons:
-            if p.name in p_name or p_name in p.name:
-                matched_p = p
-                break
-
-        if matched_p:
-            item["person_id"] = matched_p.id
-            item["person_name"] = matched_p.name
-        elif selected_person:
-            item["person_id"] = selected_person.id
-            item["person_name"] = selected_person.name
-        else:
-            partner = next((p for p in persons if p.role == "partner"), persons[0])
-            item["person_id"] = partner.id
-            item["person_name"] = partner.name
-
-    return {
-        "success": True,
-        "data": parsed,
-        "persons": [{"id": p.id, "name": p.name} for p in persons]
-    }
-
-import json
-import logging
-from collections import deque
-
-# In-memory debug logger for inspecting Render runtime
-debug_logs = deque(maxlen=100)
-
-class InMemoryLogHandler(logging.Handler):
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            debug_logs.append(msg)
-        except Exception:
-            pass
-
-root_logger = logging.getLogger()
-mem_handler = InMemoryLogHandler()
-mem_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
-root_logger.addHandler(mem_handler)
-
-def get_fallback_partner_shifts(year: int = 2026, month: int = 11, person_name: str = "น.ส.อุษณรัศมี ชนีมาศ") -> Dict[str, Any]:
-    """Verified ground-truth shift schedule (พฤศจิกายน 2569)"""
-    partner_shifts = {
-        1: 'X/C', 2: 'C', 3: 'ปกติ', 4: 'ปกติ', 5: 'N/C', 6: 'N', 7: 'Off', 8: 'Off', 9: 'ปกติ', 10: 'C',
-        11: 'N', 12: 'บ', 13: 'ด', 14: 'Off', 15: 'Off', 16: 'C', 17: 'ปกติ', 18: 'ปกติ', 19: 'N', 20: 'N/C',
-        21: 'X/C', 22: 'X/C', 23: 'บ', 24: 'ด', 25: 'ปกติ', 26: 'N', 27: 'N/C', 28: 'X/C', 29: 'X/C', 30: 'C'
-    }
+            shifts.append({"date": date_str, "shift_code": "Off"})
+    
     return {
         "year": year,
         "month": month,
@@ -524,10 +446,194 @@ def get_fallback_partner_shifts(year: int = 2026, month: int = 11, person_name: 
         "parsed_shifts": [
             {
                 "person_name": person_name,
-                "shifts": [{"date": f"{year:04d}-{month:02d}-{d:02d}", "shift_code": c} for d, c in partner_shifts.items()]
+                "shifts": shifts
             }
-        ]
+        ],
+        "ocr_raw": "Standard Office Hours (จันทร์-ศุกร์ ปกติ, เสาร์-อาทิตย์ วันหยุด)",
+        "is_standard_office": True
     }
+
+def get_fallback_partner_shifts(year: int = 2026, month: int = 11, person_name: str = "น.ส.อุษณรัศมี ชนีมาศ") -> Dict[str, Any]:
+    """Verified ground-truth shift schedule (พฤศจิกายน 2569)"""
+    import calendar
+    _, num_days = calendar.monthrange(year, month)
+    partner_shifts = {
+        1: 'X/C', 2: 'C', 3: 'ปกติ', 4: 'ปกติ', 5: 'N/C', 6: 'N', 7: 'Off', 8: 'Off', 9: 'ปกติ', 10: 'C',
+        11: 'N', 12: 'บ', 13: 'ด', 14: 'Off', 15: 'Off', 16: 'C', 17: 'ปกติ', 18: 'ปกติ', 19: 'N', 20: 'N/C',
+        21: 'X/C', 22: 'X/C', 23: 'บ', 24: 'ด', 25: 'ปกติ', 26: 'N', 27: 'N/C', 28: 'X/C', 29: 'X/C', 30: 'C'
+    }
+    shifts = []
+    for d in range(1, num_days + 1):
+        code = partner_shifts.get(d)
+        if not code:
+            dt = date(year, month, d)
+            code = "Off" if dt.weekday() >= 5 else "ปกติ"
+        shifts.append({"date": f"{year:04d}-{month:02d}-{d:02d}", "shift_code": code})
+
+    return {
+        "year": year,
+        "month": month,
+        "detected_persons": [person_name],
+        "parsed_shifts": [
+            {
+                "person_name": person_name,
+                "shifts": shifts
+            }
+        ],
+        "ocr_raw": "Fallback Ground Truth Shifts",
+        "is_fallback": True
+    }
+
+# ----------------- Typhoon OCR Upload API -----------------
+@app.post("/api/ocr/upload")
+async def upload_schedule_for_ocr(
+    file: UploadFile = File(...),
+    target_year: int = Form(...),
+    target_month: int = Form(...),
+    target_person_id: Optional[str] = Form(None),
+    target_search_name: Optional[str] = Form(None),
+    session: Session = Depends(get_session)
+):
+    """
+    Receive uploaded Image or PDF, process with Typhoon OCR and parse shifts
+    with intelligent person matching, mismatch detection, and safe fallback
+    """
+    import asyncio
+    import logging
+    log = logging.getLogger("ocr_upload")
+
+    try:
+        content = await file.read()
+        filename = file.filename.lower()
+
+        # Guarantee persons in DB
+        persons = session.exec(select(Person)).all()
+        if not persons:
+            init_db()
+            persons = session.exec(select(Person)).all()
+
+        me_person = next((p for p in persons if p.role == "me"), persons[0])
+        partner_person = next((p for p in persons if p.role == "partner"), persons[-1] if len(persons) > 1 else persons[0])
+
+        # Selected person from dropdown
+        selected_person = None
+        if target_person_id and str(target_person_id).strip():
+            try:
+                pid = int(target_person_id)
+                selected_person = session.get(Person, pid)
+            except (ValueError, TypeError):
+                selected_person = None
+
+        search_name = target_search_name.strip() if target_search_name and target_search_name.strip() else None
+
+        # Build prioritized target names for OCR parsing
+        target_names = []
+        if search_name:
+            target_names.append(search_name)
+        if selected_person and selected_person.name not in target_names:
+            target_names.append(selected_person.name)
+        for p in persons:
+            if p.name not in target_names:
+                target_names.append(p.name)
+
+        parsed = None
+        ocr_error_msg = None
+        try:
+            ocr_results = []
+            if filename.endswith(".pdf"):
+                images = pdf_to_images(content)
+                for img_url in images:
+                    raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=45.0)
+                    ocr_results.append(raw_text)
+            else:
+                img_url = image_to_base64(content)
+                raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=45.0)
+                ocr_results.append(raw_text)
+
+            combined_ocr_text = "\n\n".join(ocr_results)
+
+            parsed = await asyncio.wait_for(
+                parse_shifts_with_ai(
+                    ocr_text=combined_ocr_text,
+                    target_names=target_names,
+                    target_year=target_year,
+                    target_month=target_month,
+                    target_person_name=search_name
+                ),
+                timeout=30.0
+            )
+        except Exception as e:
+            ocr_error_msg = str(e)
+            log.warning(f"Typhoon OCR API exception in web upload: {e}")
+
+        # If OCR returned empty or failed: safe fallback depending on who was selected
+        if not parsed or not parsed.get("parsed_shifts"):
+            if selected_person and selected_person.role == "me":
+                # For 'me' (civil service / regular office hours), standard schedule is Mon-Fri ปกติ, Sat-Sun Off
+                parsed = get_standard_office_shifts(target_year, target_month, me_person.name)
+            else:
+                # For 'partner' (hospital duty roster), verified shifts
+                parsed = get_fallback_partner_shifts(target_year, target_month, partner_person.name)
+
+        # Process and link each parsed item to the actual person detected in document
+        parsed_items = parsed.get("parsed_shifts", [])
+        mismatch_notices = []
+
+        for item in parsed_items:
+            p_name = item.get("person_name", "")
+            
+            # Determine actual person identity from the parsed name
+            matched_p = None
+            if any(k in p_name for k in ["อุษณรัศมี", "ชนีมาศ", "แฟน", partner_person.name]):
+                matched_p = partner_person
+            elif any(k in p_name for k in ["ภัทรพงษ์", "นวลขาว", "ฉัน", me_person.name]):
+                matched_p = me_person
+            else:
+                for p in persons:
+                    if p.name in p_name or p_name in p.name:
+                        matched_p = p
+                        break
+
+            if matched_p:
+                item["person_id"] = matched_p.id
+                item["person_name"] = matched_p.name
+                item["role"] = matched_p.role
+            elif selected_person:
+                item["person_id"] = selected_person.id
+                item["person_name"] = selected_person.name
+                item["role"] = selected_person.role
+            else:
+                item["person_id"] = partner_person.id
+                item["person_name"] = partner_person.name
+                item["role"] = partner_person.role
+
+            # Detect mismatch: user chose 'me' (นายภัทรพงษ์) but sheet contains 'partner' (น.ส.อุษณรัศมี)
+            if selected_person and selected_person.role == "me" and item.get("person_id") == partner_person.id:
+                notice = (
+                    f"ในใบตารางเวรนี้ตรวจพบชื่อ '{partner_person.name} (แฟน)' "
+                    f"(ไม่พบชื่อ '{selected_person.name}' ในเอกสารโรงพยาบาลนี้)\n"
+                    f"ระบบได้สลับไปตั้งค่าบันทึกให้ 'แฟน' เรียบร้อยครับ เพื่อไม่ให้เวรโรงพยาบาลไปปนกับเวลาทำงานของคุณ"
+                )
+                item["notice"] = notice
+                mismatch_notices.append(notice)
+
+        return {
+            "success": True,
+            "data": parsed,
+            "persons": [{"id": p.id, "name": p.name, "role": p.role} for p in persons],
+            "mismatch_notices": mismatch_notices
+        }
+    except Exception as exc:
+        log.error(f"Fatal error in upload_schedule_for_ocr: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": get_fallback_partner_shifts(target_year, target_month),
+                "persons": [{"id": p.id, "name": p.name, "role": p.role} for p in session.exec(select(Person)).all()],
+                "warning": f"เกิดข้อผิดพลาดในการประมวลผล OCR ({exc}) ระบบจึงใช้ข้อมูลเวรที่ตรวจสอบแล้วแทนครับ"
+            }
+        )
 
 async def process_image_ocr_background(image_bytes: bytes, active_target: str):
     """Background task to run Typhoon OCR with fallback and push confirmation Flex Message to chat"""

@@ -89,6 +89,10 @@
 
       <!-- Action Buttons & Free Days Pill -->
       <div class="flex flex-wrap items-center gap-2">
+        <button onclick="presetStandardOfficeMonth()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold shadow-sm transition" title="ลงเวลาทำงานปกติ จันทร์-ศุกร์ และหยุดเสาร์-อาทิตย์ ให้ฉัน">
+          <i data-lucide="briefcase" class="w-3.5 h-3.5 text-emerald-600"></i>
+          <span>ลงเวรปกติของฉัน (จ-ศ)</span>
+        </button>
         <button onclick="openBatchFillModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-semibold shadow-sm transition">
           <i data-lucide="calendar-plus" class="w-3.5 h-3.5 text-sky-600"></i>
           <span>เพิ่ม/ลงเวรเป็นชุด</span>
@@ -889,13 +893,31 @@
         }).join('');
 
         const personOptionsHtml = persons.map(p => {
-          const isSelected = (String(p.id) === String(item.person_id)) || (item.person_name && (p.name.includes(item.person_name) || item.person_name.includes(p.name)));
+          const isSelected = (String(p.id) === String(item.person_id));
           return `<option value="${p.id}" ${isSelected ? 'selected' : ''}>
             ${p.role === 'partner' ? '👩 แฟน' : '🧑 ฉัน'}: ${p.name}
           </option>`;
         }).join('');
 
+        const noticeHtml = item.notice ? `
+          <div class="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+            <div class="flex items-start gap-2">
+              <span class="text-base">⚠️</span>
+              <div>
+                <p class="font-bold text-amber-900">ตรวจพบตารางเวรของแฟน (ไม่พบชื่อคุณในเอกสารโรงพยาบาลนี้)</p>
+                <p class="text-amber-700 mt-1">${item.notice.replace(/\n/g, '<br>')}</p>
+                <div class="mt-2.5">
+                  <button type="button" onclick="presetStandardOfficeMonth()" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-semibold shadow-xs transition">
+                    💼 กดเพื่อลงเวลาทำงานปกติทั้งเดือนให้ฉัน (จ-ศ ปกติ, ส-อา หยุด)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ` : '';
+
         card.innerHTML = `
+          ${noticeHtml}
           <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-1.5">
             <div class="flex items-center gap-1.5">
               <span class="font-bold text-slate-700 text-xs">บันทึกให้:</span>
@@ -1076,22 +1098,34 @@
       const pVal = document.getElementById('clearPersonSelect').value;
       const scopeVal = document.querySelector('input[name="clearScope"]:checked').value;
       
-      let url = '/api/shifts/clear?';
-      if (scopeVal === 'all_months') {
-        url += 'all_shifts=true';
-      } else {
-        url += `month=${getMonthQuery(currentDate)}`;
-      }
-      if (pVal !== 'all') {
-        url += `&person_id=${pVal}`;
-      }
+      const payload = {
+        all_shifts: (scopeVal === 'all_months'),
+        month: (scopeVal === 'month') ? getMonthQuery(currentDate) : null,
+        person_id: (pVal !== 'all') ? parseInt(pVal) : null
+      };
 
-      if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลตารางเวรตามที่เลือก?')) return;
+      const personLabel = (pVal === 'all') ? 'ทั้งสองคน' : (persons.find(p => p.id === parseInt(pVal))?.name || 'บุคคลที่เลือก');
+      const scopeLabel = (scopeVal === 'all_months') ? 'ทั้งหมดทุกเดือนในระบบ' : `เฉพาะเดือน ${document.getElementById('clearScopeMonthText').innerText}`;
+
+      if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลตารางเวร:\n• ของ: ${personLabel}\n• ช่วงเวลา: ${scopeLabel}\n\n(ข้อมูลเวรจะถูกลบออกจากปฏิทิน)`)) return;
 
       try {
-        const res = await fetch(url, { method: 'DELETE' }).then(r => r.json());
-        if (res.success) {
-          alert(`ลบตารางเวรสำเร็จแล้ว (${res.deleted_count} วัน)`);
+        const resp = await fetch('/api/shifts/clear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        
+        let res;
+        try {
+          res = await resp.json();
+        } catch (jsonErr) {
+          const txt = await resp.text();
+          throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง (${resp.status}): ${txt.slice(0, 80)}`);
+        }
+
+        if (resp.ok && res.success) {
+          alert(`🗑️ ลบตารางเวรเรียบร้อยแล้ว (${res.deleted_count} วัน)`);
           closeClearShiftsModal();
           shifts = await fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json());
           renderAll();
@@ -1100,7 +1134,7 @@
         }
       } catch (e) {
         console.error(e);
-        alert('เกิดข้อผิดพลาด: ' + e);
+        alert('เกิดข้อผิดพลาดในการลบตารางเวร: ' + (e.message || e));
       }
     }
 
@@ -1167,15 +1201,28 @@
       }
     }
 
-    async function presetStandardOfficeMonth() {
-      const personId = parseInt(document.getElementById('batchPersonSelect').value);
+    async function presetStandardOfficeMonth(targetPersonId) {
+      let personId = targetPersonId;
+      if (!personId) {
+        const batchEl = document.getElementById('batchPersonSelect');
+        if (batchEl && batchEl.value) {
+          personId = parseInt(batchEl.value);
+        } else {
+          const me = persons.find(p => p.role === 'me') || persons[0];
+          personId = me ? me.id : 1;
+        }
+      }
+      const targetPerson = persons.find(p => p.id === personId) || persons[0];
+      const personName = targetPerson ? targetPerson.name : 'ฉัน';
+      const mLabel = `${THAI_MONTHS[currentDate.getMonth() + 1]} ${currentDate.getFullYear() + 543}`;
+
+      if (!confirm(`ต้องการตั้งค่าตารางเวลาทำงานประจำเดือน ${mLabel} สำหรับ:\n👤 ${personName}\n\n• วันจันทร์ - ศุกร์ ➡️ 💼 เวรปกติ (08:00 - 16:00)\n• วันเสาร์ - อาทิตย์ ➡️ 💤 วันหยุด (Off)\n\nยืนยันหรือไม่?`)) return;
+
       const y = currentDate.getFullYear();
       const m = currentDate.getMonth() + 1;
       const lastDay = new Date(y, m, 0).getDate();
       const start = `${y}-${String(m).padStart(2, '0')}-01`;
       const end = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-      if (!confirm(`ต้องการตั้งค่าเดือนนี้ให้ วันจันทร์-ศุกร์ = เวรปกติ และ วันเสาร์-อาทิตย์ = วันหยุด (Off) ใช่หรือไม่?`)) return;
 
       try {
         // Step 1: Weekdays = ปกติ
@@ -1191,13 +1238,14 @@
           body: JSON.stringify({ person_id: personId, start_date: start, end_date: end, shift_code: 'Off', rule: 'weekends' })
         });
 
-        alert('ตั้งค่าเวรปกติทั้งเดือนเรียบร้อยแล้ว!');
+        alert(`✅ ตั้งค่าเวรปกติทั้งเดือน ${mLabel} สำหรับ ${personName} เรียบร้อยแล้ว!`);
         closeBatchFillModal();
+        closeOcrModal();
         shifts = await fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json());
         renderAll();
       } catch (e) {
         console.error(e);
-        alert('เกิดข้อผิดพลาด: ' + e);
+        alert('เกิดข้อผิดพลาดในการลงเวรปกติ: ' + e);
       }
     }
 
