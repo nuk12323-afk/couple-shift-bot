@@ -88,22 +88,26 @@ def init_db():
             session.commit()
 
         # 3. Initialize default system settings if empty
+        DEFAULT_GROUP_ID = "Ce73f4e64f00a9eee7a402dabdb83e953"
         existing_settings = session.exec(select(SystemSetting)).all()
-        existing_keys = {s.key for s in existing_settings}
+        existing_map = {s.key: s for s in existing_settings}
         defaults = [
             SystemSetting(key="notify_tomorrow_enabled", value="true"),
             SystemSetting(key="notify_tomorrow_time", value="20:00"),
             SystemSetting(key="notify_today_enabled", value="true"),
             SystemSetting(key="notify_today_time", value="06:00"),
             SystemSetting(key="notify_on_upload_enabled", value="true"),
-            SystemSetting(key="target_line_id", value=""),
+            SystemSetting(key="target_line_id", value=DEFAULT_GROUP_ID),
             # Legacy fallback keys
             SystemSetting(key="daily_reminder_time", value="20:00"),
             SystemSetting(key="reminder_enabled", value="true"),
         ]
         for s in defaults:
-            if s.key not in existing_keys:
+            if s.key not in existing_map:
                 session.add(s)
+            elif s.key == "target_line_id" and not existing_map["target_line_id"].value:
+                existing_map["target_line_id"].value = DEFAULT_GROUP_ID
+                session.add(existing_map["target_line_id"])
         session.commit()
 
 def get_session():

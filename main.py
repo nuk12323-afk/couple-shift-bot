@@ -1262,6 +1262,29 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                             messages=[TextMessage(text=reply_txt)]
                         )
                     )
+                elif any(k in msg_text.lower() for k in ["ไอดี", "กรุ๊ปไอดี", "group id", "groupid", "เช็คไอดี"]):
+                    if active_target:
+                        with Session(engine) as session:
+                            setting = session.exec(select(SystemSetting).where(SystemSetting.key == "target_line_id")).first()
+                            if setting:
+                                setting.value = active_target
+                                session.add(setting)
+                            else:
+                                session.add(SystemSetting(key="target_line_id", value=active_target))
+                            session.commit()
+                    id_msg = (
+                        f"🆔 ข้อมูล LINE ID ของห้องแชทนี้:\n\n"
+                        f"• Group ID (กลุ่ม): {group_id or 'ไม่ใช่ห้องกลุ่ม'}\n"
+                        f"• User ID (ผู้ส่ง): {sender_id or '-'}\n"
+                        f"• เป้าหมายแจ้งเตือนที่บันทึกไว้: {active_target}\n\n"
+                        f"✅ ระบบได้บันทึกห้องนี้เป็นเป้าหมายแจ้งเตือนอัตโนมัติเรียบร้อยแล้วครับ!"
+                    )
+                    await messaging_api.reply_message(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token,
+                            messages=[TextMessage(text=id_msg)]
+                        )
+                    )
                 elif "ช่วยเหลือ" in msg_text or "help" in msg_text.lower():
                     help_msg = (
                         "🤖 บอทตารางเวรคู่รัก ยินดีรับใช้ครับ:\n\n"
