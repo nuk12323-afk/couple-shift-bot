@@ -35,6 +35,9 @@ THAI_MONTHS = [
 
 THAI_DAYS = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"]
 
+# Non-duty shift codes: regular work, days off, and leave are not counted as duty shifts
+NON_DUTY_CODES = {"ปกติ", "Off", "ล", "-", ""}
+
 def get_thai_date_string(target_date: date) -> str:
     day_name = THAI_DAYS[target_date.weekday()]
     month_name = THAI_MONTHS[target_date.month]
@@ -115,11 +118,19 @@ def build_daily_flex_message(target_date: date, shifts_data: List[Dict], title_p
 
     # Check match status
     is_both_off = all(item["shift"]["is_off"] for item in shifts_data if item["shift"]["code"] != "-")
-    is_same_shift = len(shifts_data) == 2 and shifts_data[0]["shift"]["code"] == shifts_data[1]["shift"]["code"] and shifts_data[0]["shift"]["code"] != "-"
+    is_both_normal = len(shifts_data) == 2 and all(item["shift"]["code"] == "ปกติ" for item in shifts_data)
+    is_same_shift = (
+        len(shifts_data) == 2
+        and shifts_data[0]["shift"]["code"] == shifts_data[1]["shift"]["code"]
+        and shifts_data[0]["shift"]["code"] not in NON_DUTY_CODES
+    )
 
     if is_both_off:
         status_text = "🎉 วันนี้วันหยุดตรงกันทั้งคู่! ไปเที่ยวไหนดีนะ 💕"
         status_color = "#10B981"
+    elif is_both_normal:
+        status_text = "💼 วันนี้ทำงานปกติทั้งคู่ (เวลาราชการ) สู้ๆ ไปด้วยกันนะ 💕"
+        status_color = "#64748B"
     elif is_same_shift:
         status_text = "☀️ วันนี้เข้าเวรเหมือนกันเลย สู้ๆ นะคะ ✌️"
         status_color = "#3B82F6"
@@ -275,13 +286,28 @@ def build_ocr_confirm_flex_message(parsed_data: Dict[str, Any]) -> FlexContainer
         p_name = item.get("person_name", "ไม่ระบุ")
         shifts_list = item.get("shifts", [])
         
-        # Count by shift code
+        duty_shifts = [s for s in shifts_list if s.get("shift_code") not in NON_DUTY_CODES]
+        normal_count = sum(1 for s in shifts_list if s.get("shift_code") == "ปกติ")
+        off_count = sum(1 for s in shifts_list if s.get("shift_code") == "Off")
+        leave_count = sum(1 for s in shifts_list if s.get("shift_code") == "ล")
+
+        # Count duty shift breakdown
         code_counts = {}
-        for s in shifts_list:
+        for s in duty_shifts:
             c = s.get("shift_code", "-")
             code_counts[c] = code_counts.get(c, 0) + 1
 
         counts_str = ", ".join([f"{k}: {v} วัน" for k, v in code_counts.items()])
+        duty_text = f"🚨 เข้าเวรทั้งหมด {len(duty_shifts)} วัน ({counts_str})" if counts_str else f"🚨 เข้าเวรทั้งหมด {len(duty_shifts)} วัน"
+
+        other_parts = []
+        if normal_count > 0:
+            other_parts.append(f"💼 ทำงานปกติ {normal_count} วัน")
+        if off_count > 0:
+            other_parts.append(f"💤 หยุด {off_count} วัน")
+        if leave_count > 0:
+            other_parts.append(f"🌴 ลา {leave_count} วัน")
+        other_text = " | ".join(other_parts) if other_parts else "ไม่มีวันปกติ/วันหยุด"
 
         card = {
             "type": "box",
@@ -300,9 +326,18 @@ def build_ocr_confirm_flex_message(parsed_data: Dict[str, Any]) -> FlexContainer
                 },
                 {
                     "type": "text",
-                    "text": f"พบทั้งหมด {len(shifts_list)} วัน ({counts_str})",
+                    "text": duty_text,
+                    "weight": "bold",
                     "size": "xs",
-                    "color": "#475569",
+                    "color": "#0369A1",
+                    "wrap": True,
+                    "margin": "xs"
+                },
+                {
+                    "type": "text",
+                    "text": other_text,
+                    "size": "xxs",
+                    "color": "#64748B",
                     "wrap": True,
                     "margin": "xs"
                 }
@@ -397,15 +432,24 @@ def build_roster_status_flex_message(month_str: str = "2026-11", notice_text: Op
             shifts = session.exec(
                 select(Shift).where(Shift.person_id == p.id, Shift.shift_date.startswith(month_str))
             ).all()
+
+            duty_shifts = [s for s in shifts if s.shift_code not in NON_DUTY_CODES]
+            normal_shifts = [s for s in shifts if s.shift_code == "ปกติ"]
+            off_shifts = [s for s in shifts if s.shift_code == "Off"]
+
             code_counts = {}
-            for s in shifts:
+            for s in duty_shifts:
                 code_counts[s.shift_code] = code_counts.get(s.shift_code, 0) + 1
 
-            if shifts:
+            if duty_shifts:
                 counts_str = ", ".join([f"{k}: {v} วัน" for k, v in list(code_counts.items())[:5]])
-                detail_text = f"บันทึกแล้ว {len(shifts)} วัน ({counts_str})"
-                badge_color = "#10B981"
-                status_label = "✅ พร้อมใช้งาน"
+                detail_text = f"เข้าเวร {len(duty_shifts)} วัน ({counts_str})\n💼 ทำงานปกติ {len(normal_shifts)} วัน | 💤 วันหยุด {len(off_shifts)} วัน"
+                badge_color = "#0284C7"
+                status_label = f"🚨 เวร {len(duty_shifts)} วัน"
+            elif normal_shifts or off_shifts:
+                detail_text = f"ไม่มีเข้าเวร (ทำงานปกติ {len(normal_shifts)} วัน | วันหยุด {len(off_shifts)} วัน)"
+                badge_color = "#64748B"
+                status_label = "💼 เวลาปกติ"
             else:
                 detail_text = "ยังไม่ได้ระบุเวรในเดือนนี้ (คลิกเพื่อแก้ไขผ่านเว็บ)"
                 badge_color = "#9CA3AF"
@@ -614,8 +658,16 @@ async def send_schedule_announcement(month_str: str, target_id: Optional[str] = 
         persons = session.exec(select(Person)).all()
         summary_rows = []
         for p in persons:
-            count = len(session.exec(select(Shift).where(Shift.person_id == p.id, Shift.shift_date.startswith(month_str))).all())
-            summary_rows.append(f"• {p.name}: บันทึกแล้ว {count} วัน")
+            shifts = session.exec(select(Shift).where(Shift.person_id == p.id, Shift.shift_date.startswith(month_str))).all()
+            duty_count = sum(1 for s in shifts if s.shift_code not in NON_DUTY_CODES)
+            normal_count = sum(1 for s in shifts if s.shift_code == "ปกติ")
+            off_count = sum(1 for s in shifts if s.shift_code == "Off")
+            if duty_count > 0:
+                summary_rows.append(f"• {p.name}: เข้าเวร {duty_count} วัน (ปกติ {normal_count} วัน, หยุด {off_count} วัน)")
+            elif normal_count > 0 or off_count > 0:
+                summary_rows.append(f"• {p.name}: ทำงานปกติ {normal_count} วัน, หยุด {off_count} วัน (ไม่มีเวร)")
+            else:
+                summary_rows.append(f"• {p.name}: ยังไม่ระบุเวร")
 
     messaging_api, api_client = get_line_client()
     if not messaging_api:

@@ -118,6 +118,11 @@
       <span class="inline-flex items-center px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-semibold">✨ ว่างตรงกัน</span>
     </section>
 
+    <!-- Monthly Shift Stats Summary -->
+    <section id="monthPersonShiftStats" class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+      <!-- Populated dynamically by JS -->
+    </section>
+
     <!-- Calendar Grid -->
     <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       <!-- Days of week -->
@@ -585,11 +590,16 @@
       // Match Banner
       const banner = document.getElementById('todayMatchBanner');
       const isBothOff = todayShifts.length === 2 && todayShifts.every(t => t.st && t.st.is_off);
-      const isSameShift = todayShifts.length === 2 && todayShifts[0].code === todayShifts[1].code && todayShifts[0].code !== '-';
+      const isBothNormal = todayShifts.length === 2 && todayShifts.every(t => t.code === 'ปกติ');
+      const isSameShift = todayShifts.length === 2 && todayShifts[0].code === todayShifts[1].code && todayShifts[0].code !== '-' && !todayShifts[0].st?.is_off && todayShifts[0].code !== 'ปกติ';
 
       if (isBothOff) {
         banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200";
         banner.innerHTML = "🎉 วันนี้วันหยุดตรงกันทั้งคู่! ไปเที่ยวไหนดีนะ 💕";
+        banner.classList.remove('hidden');
+      } else if (isBothNormal) {
+        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-medium bg-slate-50 text-slate-700 border border-slate-200";
+        banner.innerHTML = "💼 วันนี้ทำงานปกติทั้งคู่ (เวลาราชการ) สู้ๆ ไปด้วยกันนะ 💕";
         banner.classList.remove('hidden');
       } else if (isSameShift) {
         banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200";
@@ -669,6 +679,41 @@
         }
 
         grid.appendChild(dayCell);
+      }
+
+      // Render Monthly Shift Stats for each person
+      const statsContainer = document.getElementById('monthPersonShiftStats');
+      if (statsContainer) {
+        statsContainer.innerHTML = '';
+        const NON_DUTY = ["ปกติ", "Off", "ล", "-", ""];
+        const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+        
+        persons.forEach(p => {
+          const pShifts = shifts.filter(s => s.person_id === p.id && s.shift_date && s.shift_date.startsWith(monthPrefix));
+          const dutyShifts = pShifts.filter(s => !NON_DUTY.includes(s.shift_code));
+          const normalShifts = pShifts.filter(s => s.shift_code === "ปกติ");
+          const offShifts = pShifts.filter(s => s.shift_code === "Off");
+
+          const codeCounts = {};
+          dutyShifts.forEach(s => { codeCounts[s.shift_code] = (codeCounts[s.shift_code] || 0) + 1; });
+          const codeStr = Object.entries(codeCounts).map(([c, n]) => `${c}×${n}`).join(', ');
+
+          const card = document.createElement('div');
+          card.className = "flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 shadow-xs gap-1";
+          
+          card.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-slate-800 text-xs">${p.role === 'me' ? '🧑' : '👩'} ${p.name}:</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 font-bold text-xs">🚨 เข้าเวร ${dutyShifts.length} วัน</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+              ${codeStr ? `<span class="text-sky-600 font-medium">(${codeStr})</span>` : ''}
+              <span class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">💼 ปกติ ${normalShifts.length} วัน</span>
+              <span class="bg-emerald-50 px-1.5 py-0.5 rounded text-emerald-700">💤 หยุด ${offShifts.length} วัน</span>
+            </div>
+          `;
+          statsContainer.appendChild(card);
+        });
       }
     }
 
@@ -780,19 +825,29 @@
         return;
       }
 
+      const NON_DUTY = ["ปกติ", "Off", "ล", "-", ""];
       data.parsed_shifts.forEach((item, idx) => {
         const card = document.createElement('div');
         card.className = "p-3 bg-slate-50 rounded-xl border border-slate-200";
         
+        const dutyShifts = item.shifts.filter(s => !NON_DUTY.includes(s.shift_code));
+        const normalShifts = item.shifts.filter(s => s.shift_code === "ปกติ");
+        const offShifts = item.shifts.filter(s => s.shift_code === "Off");
+
         let shiftsSummary = item.shifts.map(s => {
           const dNum = parseInt(s.date.split('-')[2]);
-          return `<span class="inline-block px-1.5 py-0.5 m-0.5 rounded bg-white border border-slate-200 text-[10px] font-medium">${dNum}: <b>${s.shift_code}</b></span>`;
+          const isDuty = !NON_DUTY.includes(s.shift_code);
+          const badgeClass = isDuty ? "bg-sky-50 border-sky-200 text-sky-800" : "bg-white border-slate-200 text-slate-600";
+          return `<span class="inline-block px-1.5 py-0.5 m-0.5 rounded border text-[10px] font-medium ${badgeClass}">${dNum}: <b>${s.shift_code}</b></span>`;
         }).join('');
 
         card.innerHTML = `
-          <div class="flex items-center justify-between mb-2">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-1">
             <span class="font-bold text-slate-700">👤 ${item.person_name}</span>
-            <span class="text-xs text-sky-600 font-semibold">${item.shifts.length} วันที่พบ</span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-sky-700 font-bold bg-sky-100 px-2 py-0.5 rounded-lg border border-sky-200">🚨 เข้าเวร ${dutyShifts.length} วัน</span>
+              <span class="text-[11px] text-slate-500">💼 ปกติ ${normalShifts.length} วัน | 💤 หยุด ${offShifts.length} วัน</span>
+            </div>
           </div>
           <div class="flex flex-wrap">${shiftsSummary}</div>
         `;

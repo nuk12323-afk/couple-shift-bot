@@ -340,9 +340,10 @@ async def trigger_test_reminder(target_id: Optional[str] = None, mode: str = "to
 @app.get("/api/version")
 def get_version():
     return {
-        "version": "1.4.0",
-        "deploy_time": "2026-11-05 16:15",
-        "ocr_fallback": "active"
+        "version": "1.5.0",
+        "deploy_time": "2026-11-06 08:45",
+        "ocr_fallback": "active",
+        "feature": "exclude_normal_days_from_duty_count"
     }
 
 @app.get("/api/debug/logs")
@@ -672,7 +673,11 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                 # Handle confirmation of pending OCR shifts
                 if "ยืนยันบันทึกตารางเวร" in msg_text or ("ยืนยัน" in msg_text and "เวร" in msg_text):
                     saved_total = 0
+                    duty_count = 0
+                    normal_count = 0
+                    off_count = 0
                     month_label = ""
+                    NON_DUTY = {"ปกติ", "Off", "ล", "-", ""}
                     with Session(engine) as session:
                         pending_key = f"pending_shifts_{active_target}"
                         entry = session.exec(select(SystemSetting).where(SystemSetting.key == pending_key)).first()
@@ -695,6 +700,13 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                                         s_date = s.get("date")
                                         s_code = s.get("shift_code")
                                         if s_date and s_code:
+                                            if s_code not in NON_DUTY:
+                                                duty_count += 1
+                                            elif s_code == "ปกติ":
+                                                normal_count += 1
+                                            elif s_code == "Off":
+                                                off_count += 1
+
                                             existing = session.exec(
                                                 select(Shift).where(Shift.person_id == p_id, Shift.shift_date == s_date)
                                             ).first()
@@ -710,7 +722,10 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
 
                     if saved_total > 0:
                         success_reply = (
-                            f"🎉 บันทึกตารางเวรเข้าสู่ปฏิทินเรียบร้อยแล้วครับ! (ทั้งหมด {saved_total} วัน)\n\n"
+                            f"🎉 บันทึกตารางเวรเข้าสู่ปฏิทินเรียบร้อยแล้วครับ!\n\n"
+                            f"🚨 เข้าเวรทั้งหมด: {duty_count} วัน\n"
+                            f"💼 ทำงานปกติ (เวลาราชการ): {normal_count} วัน\n"
+                            f"💤 วันหยุด (Off): {off_count} วัน\n\n"
                             f"⏰ ระบบจะคอยส่งแจ้งเตือนเวรของทั้งสองคนตามเวลาที่คุณตั้งไว้ครับ 💕"
                         )
                     else:
