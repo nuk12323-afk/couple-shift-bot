@@ -536,10 +536,12 @@ def build_roster_status_flex_message(month_str: str = "2026-11", notice_text: Op
     with Session(engine) as session:
         persons = session.exec(select(Person)).all()
         person_cards = []
+        person_shifts_map = {}
         for p in persons:
             shifts = session.exec(
                 select(Shift).where(Shift.person_id == p.id, Shift.shift_date.startswith(month_str))
             ).all()
+            person_shifts_map[p.id] = {s.shift_date: s.shift_code for s in shifts}
 
             stats = analyze_shifts_breakdown([s.shift_code for s in shifts])
 
@@ -575,7 +577,7 @@ def build_roster_status_flex_message(month_str: str = "2026-11", notice_text: Op
                         "contents": [
                             {
                                 "type": "text",
-                                "text": f"👤 {p.name}",
+                                "text": f"{'👩' if p.role == 'partner' else '🧑'} {p.name}",
                                 "weight": "bold",
                                 "size": "sm",
                                 "color": "#0F172A",
@@ -603,6 +605,53 @@ def build_roster_status_flex_message(month_str: str = "2026-11", notice_text: Op
                 ]
             }
             person_cards.append(card)
+
+        if len(persons) >= 2:
+            m1 = person_shifts_map.get(persons[0].id, {})
+            m2 = person_shifts_map.get(persons[1].id, {})
+            all_d = sorted(set(list(m1.keys()) + list(m2.keys())))
+            both_off = [int(d.split("-")[-1]) for d in all_d if m1.get(d) == "Off" and m2.get(d) == "Off"]
+            both_normal = [int(d.split("-")[-1]) for d in all_d if m1.get(d) == "ปกติ" and m2.get(d) == "ปกติ"]
+            b_to_d_list = []
+            for p in persons:
+                pm = person_shifts_map.get(p.id, {})
+                for d_str in sorted(pm.keys()):
+                    if "บ" in pm.get(d_str, ""):
+                        try:
+                            dt_cur = datetime.strptime(d_str, "%Y-%m-%d").date()
+                            nxt_str = (dt_cur + timedelta(days=1)).strftime("%Y-%m-%d")
+                            if "ด" in pm.get(nxt_str, ""):
+                                b_to_d_list.append(f"{dt_cur.day}➡️{dt_cur.day+1}")
+                        except ValueError:
+                            pass
+
+            hl_lines = []
+            if both_off:
+                hl_lines.append(f"🎉 หยุดตรงกัน ({len(both_off)} วัน): {', '.join(map(str, both_off))}")
+            if both_normal:
+                hl_lines.append(f"💼 ปกติตรงกัน ({len(both_normal)} วัน): {', '.join(map(str, both_normal))}")
+            if b_to_d_list:
+                hl_lines.append(f"🔥 บ่ายต่อดึก ({len(b_to_d_list)} ครั้ง): วันที่ {', '.join(b_to_d_list)}")
+
+            if hl_lines:
+                person_cards.append({
+                    "type": "box",
+                    "layout": "vertical",
+                    "backgroundColor": "#FDF2F8",
+                    "cornerRadius": "10px",
+                    "paddingAll": "10px",
+                    "margin": "md",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "\n".join(hl_lines),
+                            "size": "xs",
+                            "color": "#9D174D",
+                            "weight": "bold",
+                            "wrap": True
+                        }
+                    ]
+                })
 
     flex_dict = {
         "type": "bubble",

@@ -1298,11 +1298,23 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                             messages=[TextMessage(text=id_msg)]
                         )
                     )
+                elif any(k in msg_text for k in ["ตารางเวร", "สรุปเวร", "เช็คเวร", "เวรเดือนนี้"]):
+                    from services.line_service import build_roster_status_flex_message
+                    now = datetime.now()
+                    month_str = now.strftime("%Y-%m")
+                    flex = build_roster_status_flex_message(month_str)
+                    await messaging_api.reply_message(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token,
+                            messages=[FlexMessage(alt_text=f"สรุปตารางเวรประจำเดือน {month_str}", contents=flex)]
+                        )
+                    )
                 elif "ช่วยเหลือ" in msg_text or "help" in msg_text.lower():
                     help_msg = (
                         "🤖 บอทตารางเวรคู่รัก ยินดีรับใช้ครับ:\n\n"
+                        "• 'ตารางเวร' / 'สรุปเวร' ➡️ ดูการ์ดสรุปเวรทั้งเดือน\n"
                         "• 'เวรวันนี้' / 'เวรพรุ่งนี้' ➡️ ดูเวรประจำวัน\n"
-                        "• 'วันว่าง' ➡️ ดูวันหยุดตรงกันทั้งคู่\n"
+                        "• 'วันว่าง' ➡️ ดูวันหยุดตรงกัน & วันปกติตรงกัน\n"
                         "• 'เปลี่ยนเวร วันที่ 12 แฟนเป็น ด' ➡️ แก้ไขเวรรายวัน\n"
                         "• 'ลบเวรทั้งหมด' / 'ลบเวรแฟนทั้งหมด' ➡️ ล้างตารางเวร\n"
                         "• 'ลงเวรปกติทั้งเดือน' ➡️ ลงเวร จ-ศ ปกติ + ส-อ หยุด\n"
