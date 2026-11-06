@@ -53,10 +53,18 @@ def get_line_client() -> Tuple[Optional[AsyncMessagingApi], Optional[AsyncApiCli
     return messaging_api, api_client
 
 def get_today_shifts(target_date_str: Optional[str] = None) -> List[Dict]:
-    """Retrieve shifts for all persons on target date"""
+    """Retrieve shifts for all persons on target date, including บ่ายต่อดึก (บ -> ด) context"""
     if not target_date_str:
         tz = pytz.timezone(TIMEZONE)
         target_date_str = datetime.now(tz).strftime("%Y-%m-%d")
+
+    try:
+        dt_obj = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+        prev_date_str = (dt_obj - timedelta(days=1)).strftime("%Y-%m-%d")
+        next_date_str = (dt_obj + timedelta(days=1)).strftime("%Y-%m-%d")
+    except ValueError:
+        prev_date_str = ""
+        next_date_str = ""
 
     with Session(engine) as session:
         persons = session.exec(select(Person)).all()
@@ -70,6 +78,24 @@ def get_today_shifts(target_date_str: Optional[str] = None) -> List[Dict]:
                     Shift.shift_date == target_date_str
                 )
             ).first()
+            prev_shift = session.exec(
+                select(Shift).where(Shift.person_id == person.id, Shift.shift_date == prev_date_str)
+            ).first() if prev_date_str else None
+            next_shift = session.exec(
+                select(Shift).where(Shift.person_id == person.id, Shift.shift_date == next_date_str)
+            ).first() if next_date_str else None
+
+            cur_code = shift.shift_code if shift else "-"
+            prev_code = prev_shift.shift_code if prev_shift else ""
+            next_code = next_shift.shift_code if next_shift else ""
+
+            b_to_d_alert = None
+            if "บ" in cur_code and "ด" in cur_code:
+                b_to_d_alert = "🔥 ควบเวรบ่ายต่อดึกในวันเดียว!"
+            elif "บ" in cur_code and "ด" in next_code:
+                b_to_d_alert = "🔥 บ่ายต่อดึก! (วันนี้เวรบ่าย ➡️ พรุ่งนี้ต่อเวรดึก)"
+            elif "บ" in prev_code and "ด" in cur_code:
+                b_to_d_alert = "🔥 บ่ายต่อดึก! (ต่อเนื่องเวรดึกจากเวรบ่ายเมื่อวาน)"
 
             shift_info = None
             if shift and shift.shift_code in shift_types:
@@ -81,7 +107,8 @@ def get_today_shifts(target_date_str: Optional[str] = None) -> List[Dict]:
                     "color": st.color,
                     "icon": st.icon,
                     "is_off": st.is_off,
-                    "note": shift.note
+                    "note": shift.note,
+                    "b_to_d_alert": b_to_d_alert
                 }
             elif shift:
                 # Custom code not in standard dictionary
@@ -92,7 +119,8 @@ def get_today_shifts(target_date_str: Optional[str] = None) -> List[Dict]:
                     "color": "#3B82F6",
                     "icon": "📋",
                     "is_off": False,
-                    "note": shift.note
+                    "note": shift.note,
+                    "b_to_d_alert": b_to_d_alert
                 }
             else:
                 # Default to unknown / not set
@@ -103,7 +131,8 @@ def get_today_shifts(target_date_str: Optional[str] = None) -> List[Dict]:
                     "color": "#9CA3AF",
                     "icon": "❓",
                     "is_off": False,
-                    "note": ""
+                    "note": "",
+                    "b_to_d_alert": None
                 }
 
             results.append({
@@ -115,6 +144,8 @@ def get_today_shifts(target_date_str: Optional[str] = None) -> List[Dict]:
 def build_daily_flex_message(target_date: date, shifts_data: List[Dict], title_prefix: str = "☀️ ตารางเวรประจำวันนี้") -> FlexContainer:
     """Build a cute and informative LINE Flex Message for daily reminder"""
     date_str = get_thai_date_string(target_date)
+    is_weekend = target_date.weekday() >= 5
+    weekend_badge = " (🏖️ วันหยุดเสาร์-อาทิตย์)" if is_weekend else ""
 
     # Check match status
     is_both_off = all(item["shift"]["is_off"] for item in shifts_data if item["shift"]["code"] != "-")
@@ -126,11 +157,11 @@ def build_daily_flex_message(target_date: date, shifts_data: List[Dict], title_p
     )
 
     if is_both_off:
-        status_text = "🎉 วันนี้วันหยุดตรงกันทั้งคู่! ไปเที่ยวไหนดีนะ 💕"
+        status_text = "🎉 วันนี้วันหยุดตรงกันทั้งคู่! ไปเที่ยว/เดทไหนดีนะ 💕"
         status_color = "#10B981"
     elif is_both_normal:
-        status_text = "💼 วันนี้ทำงานปกติทั้งคู่ (เวลาราชการ) สู้ๆ ไปด้วยกันนะ 💕"
-        status_color = "#64748B"
+        status_text = "💼✨ วันนี้ทำงานปกติตรงกันทั้งคู่! (เลิก 16:00 น. ว่างตรงกันตอนเย็น นัดเจอกันได้เลย 💕)"
+        status_color = "#0284C7"
     elif is_same_shift:
         status_text = "☀️ วันนี้เข้าเวรเหมือนกันเลย สู้ๆ นะคะ ✌️"
         status_color = "#3B82F6"
@@ -143,61 +174,84 @@ def build_daily_flex_message(target_date: date, shifts_data: List[Dict], title_p
         p = item["person"]
         s = item["shift"]
         role_label = "🧑 ฉัน" if p.role == "me" else "👩 แฟน"
+        b_to_d = s.get("b_to_d_alert")
+
+        card_contents = [
+            {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": f"{role_label}: {p.name}",
+                        "weight": "bold",
+                        "size": "sm",
+                        "color": "#1E293B",
+                        "flex": 4
+                    },
+                    {
+                        "type": "text",
+                        "text": f"{s['icon']} {s['code']}",
+                        "weight": "bold",
+                        "size": "sm",
+                        "color": s['color'],
+                        "align": "end",
+                        "flex": 2
+                    }
+                ]
+            },
+            {
+                "type": "box",
+                "layout": "horizontal",
+                "margin": "sm",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": f"• {s['name']}",
+                        "size": "xs",
+                        "color": "#475569",
+                        "flex": 3
+                    },
+                    {
+                        "type": "text",
+                        "text": s['time'],
+                        "size": "xs",
+                        "color": "#64748B",
+                        "align": "end",
+                        "flex": 3
+                    }
+                ]
+            }
+        ]
+
+        if b_to_d:
+            card_contents.append({
+                "type": "box",
+                "layout": "vertical",
+                "backgroundColor": "#FEF2F2",
+                "cornerRadius": "6px",
+                "paddingAll": "6px",
+                "margin": "sm",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": b_to_d,
+                        "size": "xxs",
+                        "weight": "bold",
+                        "color": "#DC2626",
+                        "wrap": True
+                    }
+                ]
+            })
 
         bubble = {
             "type": "box",
             "layout": "vertical",
-            "backgroundColor": "#F8FAFC",
+            "backgroundColor": "#FFF7ED" if b_to_d else "#F8FAFC",
             "cornerRadius": "12px",
             "paddingAll": "12px",
             "margin": "md",
-            "contents": [
-                {
-                    "type": "box",
-                    "layout": "horizontal",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": f"{role_label}: {p.name}",
-                            "weight": "bold",
-                            "size": "sm",
-                            "color": "#1E293B",
-                            "flex": 4
-                        },
-                        {
-                            "type": "text",
-                            "text": f"{s['icon']} {s['code']}",
-                            "weight": "bold",
-                            "size": "sm",
-                            "color": s['color'],
-                            "align": "end",
-                            "flex": 2
-                        }
-                    ]
-                },
-                {
-                    "type": "box",
-                    "layout": "horizontal",
-                    "margin": "sm",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": f"• {s['name']}",
-                            "size": "xs",
-                            "color": "#475569",
-                            "flex": 3
-                        },
-                        {
-                            "type": "text",
-                            "text": s['time'],
-                            "size": "xs",
-                            "color": "#64748B",
-                            "align": "end",
-                            "flex": 3
-                        }
-                    ]
-                }
-            ]
+            "contents": card_contents
         }
         person_bubbles.append(bubble)
 
@@ -207,7 +261,7 @@ def build_daily_flex_message(target_date: date, shifts_data: List[Dict], title_p
         "header": {
             "type": "box",
             "layout": "vertical",
-            "backgroundColor": "#0284C7",
+            "backgroundColor": "#7C3AED" if is_weekend else "#0284C7",
             "paddingAll": "16px",
             "contents": [
                 {
@@ -219,7 +273,7 @@ def build_daily_flex_message(target_date: date, shifts_data: List[Dict], title_p
                 },
                 {
                     "type": "text",
-                    "text": f"📅 {date_str}",
+                    "text": f"📅 {date_str}{weekend_badge}",
                     "color": "#E0F2FE",
                     "size": "xs",
                     "margin": "xs"
@@ -675,8 +729,10 @@ async def send_schedule_announcement(month_str: str, target_id: Optional[str] = 
         # Get persons and count shifts
         persons = session.exec(select(Person)).all()
         summary_rows = []
+        person_shifts_map = {}
         for p in persons:
             shifts = session.exec(select(Shift).where(Shift.person_id == p.id, Shift.shift_date.startswith(month_str))).all()
+            person_shifts_map[p.id] = {s.shift_date: s.shift_code for s in shifts}
             duty_count = sum(1 for s in shifts if s.shift_code not in NON_DUTY_CODES)
             normal_count = sum(1 for s in shifts if s.shift_code == "ปกติ")
             off_count = sum(1 for s in shifts if s.shift_code == "Off")
@@ -687,14 +743,44 @@ async def send_schedule_announcement(month_str: str, target_id: Optional[str] = 
             else:
                 summary_rows.append(f"• {p.name}: ยังไม่ระบุเวร")
 
+        extra_highlights = []
+        if len(persons) >= 2:
+            m1 = person_shifts_map.get(persons[0].id, {})
+            m2 = person_shifts_map.get(persons[1].id, {})
+            all_d = sorted(set(list(m1.keys()) + list(m2.keys())))
+            both_off = [int(d.split("-")[-1]) for d in all_d if m1.get(d) == "Off" and m2.get(d) == "Off"]
+            both_normal = [int(d.split("-")[-1]) for d in all_d if m1.get(d) == "ปกติ" and m2.get(d) == "ปกติ"]
+            if both_off:
+                extra_highlights.append(f"🎉 วันหยุด (Off) ตรงกัน ({len(both_off)} วัน): วันที่ {', '.join(map(str, both_off))}")
+            if both_normal:
+                extra_highlights.append(f"💼 วันปกติตรงกัน เลิก 16:00 น. ({len(both_normal)} วัน): วันที่ {', '.join(map(str, both_normal))}")
+
+            for p in persons:
+                pm = person_shifts_map.get(p.id, {})
+                b_to_d_days = []
+                for d_str in sorted(pm.keys()):
+                    c_cur = pm.get(d_str, "")
+                    if "บ" in c_cur:
+                        try:
+                            dt_cur = datetime.strptime(d_str, "%Y-%m-%d").date()
+                            nxt_str = (dt_cur + timedelta(days=1)).strftime("%Y-%m-%d")
+                            if "ด" in pm.get(nxt_str, ""):
+                                b_to_d_days.append(f"{dt_cur.day} บ➡️{dt_cur.day+1} ด")
+                        except ValueError:
+                            pass
+                if b_to_d_days:
+                    extra_highlights.append(f"🔥 เตือนบ่ายต่อดึก ({p.name}): {', '.join(b_to_d_days)}")
+
     messaging_api, api_client = get_line_client()
     if not messaging_api:
         return {"success": False, "message": "No LINE client"}
 
+    highlight_block = ("\n\n" + "\n".join(extra_highlights)) if extra_highlights else ""
     text_msg = (
         f"📢 ประกาศตารางเวรเข้าสู่ระบบแล้ว!\n"
         f"📅 ประจำเดือน: {month_str}\n\n"
         + "\n".join(summary_rows)
+        + highlight_block
         + f"\n\n💕 ระบบจะคอยแจ้งเตือนเวรของทั้งสองคนตามเวลาที่ตั้งไว้นะครับ"
     )
 

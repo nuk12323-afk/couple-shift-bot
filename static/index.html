@@ -101,9 +101,17 @@
           <i data-lucide="trash-2" class="w-3.5 h-3.5 text-rose-600"></i>
           <span>ลบตารางเวร</span>
         </button>
-        <div id="freeDaysBadge" class="flex items-center space-x-2 bg-pink-50 border border-pink-200 px-3 py-1.5 rounded-xl text-pink-700 text-xs font-medium">
-          <i data-lucide="heart" class="w-4 h-4 text-pink-500 fill-pink-500"></i>
-          <span id="freeDaysCountText">วันหยุดตรงกัน: 0 วัน</span>
+        <div id="freeDaysBadge" class="flex items-center space-x-1.5 bg-pink-50 border border-pink-200 px-2.5 py-1.5 rounded-xl text-pink-700 text-xs font-semibold">
+          <i data-lucide="heart" class="w-3.5 h-3.5 text-pink-500 fill-pink-500"></i>
+          <span id="freeDaysCountText">หยุดตรงกัน: 0 วัน</span>
+        </div>
+        <div id="normalMatchBadge" class="flex items-center space-x-1.5 bg-sky-50 border border-sky-200 px-2.5 py-1.5 rounded-xl text-sky-700 text-xs font-semibold">
+          <span>💼</span>
+          <span id="normalMatchCountText">ปกติตรงกัน: 0 วัน</span>
+        </div>
+        <div id="bToDBadge" class="flex items-center space-x-1.5 bg-orange-50 border border-orange-300 px-2.5 py-1.5 rounded-xl text-orange-800 text-xs font-semibold">
+          <span>🔥</span>
+          <span id="bToDCountText">บ่ายต่อดึก: 0 ครั้ง</span>
         </div>
       </div>
     </section>
@@ -119,7 +127,10 @@
       <span class="inline-flex items-center px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">⏰ N (เข้า 7 โมงเช้า)</span>
       <span class="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">💼 ปกติ (08:00-16:00)</span>
       <span class="inline-flex items-center px-2 py-0.5 rounded bg-green-100 text-green-700 font-medium">💤 Off (วันหยุด)</span>
-      <span class="inline-flex items-center px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-semibold">✨ ว่างตรงกัน</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 border border-yellow-400 font-semibold">✨ หยุดตรงกัน</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-sky-100 text-sky-800 border border-sky-300 font-semibold">💼 ปกติตรงกัน (ว่างเย็น)</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-600 text-white font-semibold">🔥 บ่ายต่อดึก (บ➡️ด)</span>
+      <span class="inline-flex items-center px-2 py-0.5 rounded bg-purple-100 text-purple-700 border border-purple-200 font-semibold">🏖️ เสาร์-อาทิตย์ (สีไฮไลท์)</span>
     </section>
 
     <!-- Monthly Shift Stats Summary -->
@@ -130,14 +141,14 @@
     <!-- Calendar Grid -->
     <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       <!-- Days of week -->
-      <div class="grid grid-cols-7 bg-slate-50 border-b border-slate-200 text-center py-2 text-xs font-semibold text-slate-500">
-        <span class="text-rose-500">อา</span>
-        <span>จ</span>
-        <span>อ</span>
-        <span>พ</span>
-        <span>พฤ</span>
-        <span>ศ</span>
-        <span class="text-purple-600">ส</span>
+      <div class="grid grid-cols-7 bg-slate-50 border-b border-slate-200 text-center text-xs font-bold text-slate-600">
+        <span class="py-2 bg-rose-100/80 text-rose-700 border-r border-rose-200">🏖️ อาทิตย์</span>
+        <span class="py-2">จันทร์</span>
+        <span class="py-2">อังคาร</span>
+        <span class="py-2">พุธ</span>
+        <span class="py-2">พฤหัสบดี</span>
+        <span class="py-2">ศุกร์</span>
+        <span class="py-2 bg-purple-100/80 text-purple-700 border-l border-purple-200">🏖️ เสาร์</span>
       </div>
       <!-- Days grid -->
       <div id="calendarGrid" class="grid grid-cols-7 gap-px bg-slate-200">
@@ -145,15 +156,39 @@
       </div>
     </section>
 
-    <!-- Free Days List Section -->
-    <section class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-      <div class="flex items-center space-x-2 mb-3">
-        <i data-lucide="sparkle" class="w-4 h-4 text-amber-500"></i>
-        <h3 class="text-sm font-semibold text-slate-700">วันที่หยุดตรงกันในเดือนนี้ (วางแผนไปเที่ยว/เดท)</h3>
+    <!-- Free Days, Normal Match Days & B-to-D Alerts Section -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <!-- 1. Both OFF -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-pink-100">
+        <div class="flex items-center space-x-2 mb-2.5">
+          <i data-lucide="heart" class="w-4 h-4 text-pink-500 fill-pink-500"></i>
+          <h3 class="text-xs font-bold text-slate-800">🎉 วันหยุด (Off) ตรงกัน (ว่างทั้งวัน)</h3>
+        </div>
+        <div id="freeDaysList" class="flex flex-wrap gap-1.5">
+          <span class="text-xs text-slate-400">ยังไม่มีข้อมูล</span>
+        </div>
       </div>
-      <div id="freeDaysList" class="flex flex-wrap gap-2">
-        <!-- Rendered dynamically -->
-        <span class="text-xs text-slate-400">ยังไม่มีข้อมูล</span>
+
+      <!-- 2. Both Normal (ปกติ) -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-sky-100">
+        <div class="flex items-center space-x-2 mb-2.5">
+          <span class="text-sm">💼</span>
+          <h3 class="text-xs font-bold text-slate-800">วันปกติตรงกัน (เลิก 16:00 น. ว่างตอนเย็น 💕)</h3>
+        </div>
+        <div id="normalMatchDaysList" class="flex flex-wrap gap-1.5">
+          <span class="text-xs text-slate-400">ยังไม่มีข้อมูล</span>
+        </div>
+      </div>
+
+      <!-- 3. Afternoon to Night (บ่ายต่อดึก) -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-orange-200">
+        <div class="flex items-center space-x-2 mb-2.5">
+          <span class="text-sm">🔥</span>
+          <h3 class="text-xs font-bold text-rose-700">แจ้งเตือนเวรหนัก: บ่ายต่อดึก (บ ➡️ ด)</h3>
+        </div>
+        <div id="bToDAlertsList" class="flex flex-col gap-1.5">
+          <span class="text-xs text-slate-400">ไม่มีเวรบ่ายต่อดึกในเดือนนี้</span>
+        </div>
       </div>
     </section>
 
@@ -575,35 +610,69 @@
       lucide.createIcons();
     }
 
+    function formatDateYMD(y, mZeroIndexed, d) {
+      const dt = new Date(y, mZeroIndexed, d);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    }
+
+    function checkPersonBToD(personId, year, monthZero, day) {
+      const curStr = formatDateYMD(year, monthZero, day);
+      const prevStr = formatDateYMD(year, monthZero, day - 1);
+      const nextStr = formatDateYMD(year, monthZero, day + 1);
+
+      const sCur = shifts.find(x => x.person_id === personId && x.shift_date === curStr);
+      const sPrev = shifts.find(x => x.person_id === personId && x.shift_date === prevStr);
+      const sNext = shifts.find(x => x.person_id === personId && x.shift_date === nextStr);
+
+      const cCur = sCur ? sCur.shift_code : '';
+      const cPrev = sPrev ? sPrev.shift_code : '';
+      const cNext = sNext ? sNext.shift_code : '';
+
+      if (cCur.includes('บ') && cCur.includes('ด')) return 'same_day';
+      if (cCur.includes('บ') && cNext.includes('ด')) return 'b_start';
+      if (cPrev.includes('บ') && cCur.includes('ด')) return 'd_end';
+      return null;
+    }
+
     function renderTodayCard() {
-      const todayStr = getMonthQuery(new Date()) + '-' + String(new Date().getDate()).padStart(2, '0');
-      document.getElementById('todayDateStr').innerText = `${new Date().getDate()} ${THAI_MONTHS[new Date().getMonth() + 1]} ${new Date().getFullYear() + 543}`;
+      const now = new Date();
+      const todayStr = formatDateYMD(now.getFullYear(), now.getMonth(), now.getDate());
+      const isWeekendToday = (now.getDay() === 0 || now.getDay() === 6);
+      const weekendTag = now.getDay() === 0 ? ' (🏖️ วันอาทิตย์)' : (now.getDay() === 6 ? ' (🏖️ วันเสาร์)' : '');
+      document.getElementById('todayDateStr').innerText = `${now.getDate()} ${THAI_MONTHS[now.getMonth() + 1]} ${now.getFullYear() + 543}${weekendTag}`;
 
       const container = document.getElementById('todayCards');
       container.innerHTML = '';
 
       let todayShifts = [];
+      let bToDAlertsToday = [];
 
       persons.forEach(person => {
         const s = shifts.find(item => item.person_id === person.id && item.shift_date === todayStr);
         const st = shiftTypes.find(t => t.code === (s ? s.shift_code : ''));
-        todayShifts.push({ person, st, code: s ? s.shift_code : '-' });
+        const bToDStatus = checkPersonBToD(person.id, now.getFullYear(), now.getMonth(), now.getDate());
+        if (bToDStatus) {
+          bToDAlertsToday.push({ person, status: bToDStatus });
+        }
+        todayShifts.push({ person, st, code: s ? s.shift_code : '-', bToDStatus });
 
         const card = document.createElement('div');
-        card.className = "p-3 rounded-xl border border-slate-100 flex items-center justify-between";
-        card.style.backgroundColor = `${person.color}08`;
-        card.style.borderColor = `${person.color}25`;
+        card.className = "p-3 rounded-xl border flex items-center justify-between";
+        card.style.backgroundColor = bToDStatus ? '#FFF7ED' : `${person.color}08`;
+        card.style.borderColor = bToDStatus ? '#F97316' : `${person.color}25`;
 
         const badgeColor = st ? st.color : '#94A3B8';
         const badgeIcon = st ? st.icon : '❓';
         const badgeName = st ? st.name : 'ยังไม่ระบุ';
         const badgeTime = st && st.start_time ? `${st.start_time}-${st.end_time}` : (st && st.is_off ? 'ทั้งวัน' : '-');
+        const bToDBadgeHtml = bToDStatus ? `<span class="inline-block mt-1 px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">🔥 บ่ายต่อดึก!</span>` : '';
 
         card.innerHTML = `
           <div>
             <span class="text-[11px] font-semibold uppercase" style="color: ${person.color}">${person.role === 'me' ? '🧑 ' : '👩 '}${person.name}</span>
             <p class="text-xs font-bold text-slate-700 mt-0.5">${badgeIcon} ${badgeName}</p>
             <p class="text-[10px] text-slate-400">${badgeTime}</p>
+            ${bToDBadgeHtml}
           </div>
           <span class="px-2.5 py-1 rounded-lg text-xs font-bold text-white shadow-sm" style="background-color: ${badgeColor}">${s ? s.shift_code : '-'}</span>
         `;
@@ -616,16 +685,21 @@
       const isBothNormal = todayShifts.length === 2 && todayShifts.every(t => t.code === 'ปกติ');
       const isSameShift = todayShifts.length === 2 && todayShifts[0].code === todayShifts[1].code && todayShifts[0].code !== '-' && !todayShifts[0].st?.is_off && todayShifts[0].code !== 'ปกติ';
 
-      if (isBothOff) {
-        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200";
-        banner.innerHTML = "🎉 วันนี้วันหยุดตรงกันทั้งคู่! ไปเที่ยวไหนดีนะ 💕";
+      if (bToDAlertsToday.length > 0) {
+        const names = bToDAlertsToday.map(x => x.person.name).join(', ');
+        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-bold bg-red-50 text-red-700 border border-red-300";
+        banner.innerHTML = `🔥 แจ้งเตือนเวรหนัก (บ่ายต่อดึก): วันนี้ ${names} มีเวรบ่ายต่อเนื่องเวรดึก! อย่าลืมพักผ่อนและส่งกำลังใจให้กันนะครับ 💪💖`;
+        banner.classList.remove('hidden');
+      } else if (isBothOff) {
+        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200";
+        banner.innerHTML = "🎉 วันนี้วันหยุด (Off) ตรงกันทั้งคู่! ไปเที่ยว/เดทไหนดีนะ 💕";
         banner.classList.remove('hidden');
       } else if (isBothNormal) {
-        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-medium bg-slate-50 text-slate-700 border border-slate-200";
-        banner.innerHTML = "💼 วันนี้ทำงานปกติทั้งคู่ (เวลาราชการ) สู้ๆ ไปด้วยกันนะ 💕";
+        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-semibold bg-sky-50 text-sky-800 border border-sky-200";
+        banner.innerHTML = "💼✨ วันนี้ทำงานปกติตรงกันทั้งคู่! (08:00-16:00) เลิกงาน 4 โมงเย็น ไม่มีเวรต่อ นัดเจอกัน/กินข้าวเย็นได้เลย 💕";
         banner.classList.remove('hidden');
       } else if (isSameShift) {
-        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200";
+        banner.className = "mt-3 p-2.5 rounded-xl text-center text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200";
         banner.innerHTML = "☀️ วันนี้เข้าเวรเหมือนกันเลย สู้ๆ นะคะ ✌️";
         banner.classList.remove('hidden');
       } else {
@@ -649,56 +723,107 @@
       // Empty cells before first day
       for (let i = 0; i < firstDayIndex; i++) {
         const emptyCell = document.createElement('div');
-        emptyCell.className = "bg-white min-h-[90px] p-1.5 opacity-40";
+        const isSunCol = (i === 0);
+        const isSatCol = (i === 6);
+        emptyCell.className = `${isSunCol ? 'bg-rose-50/40' : (isSatCol ? 'bg-purple-50/40' : 'bg-slate-50/50')} min-h-[95px] p-1.5 opacity-50`;
         grid.appendChild(emptyCell);
       }
 
       // Days of month
       for (let day = 1; day <= totalDays; day++) {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dayOfWeek = new Date(year, month, day).getDay();
+        const isSunday = (dayOfWeek === 0);
+        const isSaturday = (dayOfWeek === 6);
+        const isWeekend = isSunday || isSaturday;
+
         const dayCell = document.createElement('div');
-        dayCell.className = "bg-white min-h-[95px] p-1.5 flex flex-col justify-between hover:bg-sky-50/50 transition cursor-pointer relative group border-t border-l border-slate-100";
+        let cellBg = "bg-white hover:bg-sky-50/50 border-slate-100";
+        if (isSunday) {
+          cellBg = "bg-rose-50/75 hover:bg-rose-100/70 border-rose-200/70";
+        } else if (isSaturday) {
+          cellBg = "bg-purple-50/75 hover:bg-purple-100/70 border-purple-200/70";
+        }
+        dayCell.className = `${cellBg} min-h-[100px] p-1.5 flex flex-col justify-between transition cursor-pointer relative group border-t border-l`;
         dayCell.onclick = () => openEditDayModal(dateStr);
 
         // Find shifts for both
         let dayShifts = [];
+        let hasBToD = false;
+        let bToDLabel = '';
+
         persons.forEach(p => {
           const s = shifts.find(item => item.person_id === p.id && item.shift_date === dateStr);
           const st = shiftTypes.find(t => t.code === (s ? s.shift_code : ''));
-          dayShifts.push({ person: p, shift: s, type: st });
+          const bToDMode = checkPersonBToD(p.id, year, month, day);
+          if (bToDMode) {
+            hasBToD = true;
+            bToDLabel = (bToDMode === 'b_start') ? '🔥บ่าย➡️ดึก' : (bToDMode === 'd_end' ? '🔥ต่อดึก' : '🔥บ่ายควบดึก');
+          }
+          dayShifts.push({ person: p, shift: s, type: st, bToDMode });
         });
 
-        // Check if both are OFF
-        const bothOff = dayShifts.length === 2 && dayShifts.every(d => d.type && d.type.is_off);
+        // Check if both are OFF or both are NORMAL (ปกติ)
+        const bothOff = dayShifts.length === 2 && dayShifts.every(d => (d.type && d.type.is_off) || (d.shift && d.shift.shift_code === 'Off'));
+        const bothNormal = dayShifts.length === 2 && dayShifts.every(d => d.shift && d.shift.shift_code === 'ปกติ');
 
         let badgesHtml = '';
         dayShifts.forEach(d => {
           if (d.shift) {
-            const color = d.type ? d.type.color : '#94A3B8';
-            const icon = d.type ? d.type.icon : '';
+            const code = d.shift.shift_code;
+            let color = d.type ? d.type.color : '#94A3B8';
+            // Make weekend Off badge distinct teal/emerald
+            if (code === 'Off' && isWeekend) {
+              color = '#059669';
+            }
+            const extraRing = d.bToDMode ? 'ring-2 ring-red-500 font-bold' : '';
+            const fireIcon = d.bToDMode ? '🔥' : '';
+            const weekendOffIcon = (code === 'Off' && isWeekend) ? '🏖️' : '';
             badgesHtml += `
-              <div class="flex items-center justify-between px-1.5 py-0.5 rounded text-[10px] font-medium leading-tight text-white mb-1 shadow-xs" style="background-color: ${color}">
-                <span class="truncate max-w-[45px]">${d.person.name}</span>
-                <span class="font-bold">${d.shift.shift_code}</span>
+              <div class="flex items-center justify-between px-1.5 py-0.5 rounded text-[10px] font-medium leading-tight text-white mb-1 shadow-xs ${extraRing}" style="background-color: ${color}">
+                <span class="truncate max-w-[44px]">${d.person.name}</span>
+                <span class="font-bold">${fireIcon}${weekendOffIcon}${code}</span>
               </div>
             `;
           }
         });
 
         const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
+        const dayNumColor = isToday
+          ? 'w-5 h-5 rounded-full bg-pink-600 text-white flex items-center justify-center shadow-xs'
+          : (isSunday ? 'text-rose-600 font-extrabold' : (isSaturday ? 'text-purple-700 font-extrabold' : 'text-slate-700'));
+        const weekendMiniBadge = isSunday
+          ? '<span class="text-[9px] text-rose-500 font-bold ml-0.5">อา.</span>'
+          : (isSaturday ? '<span class="text-[9px] text-purple-600 font-bold ml-0.5">ส.</span>' : '');
+
+        let topRightBadges = '';
+        if (hasBToD) {
+          topRightBadges += `<span class="text-[9px] bg-red-600 text-white px-1 rounded font-bold shadow-xs">${bToDLabel}</span>`;
+        } else if (bothOff) {
+          topRightBadges += '<span class="text-[9px] bg-yellow-100 text-yellow-900 border border-yellow-400 px-1 rounded font-bold shadow-2xs">✨หยุดคู่</span>';
+        } else if (bothNormal) {
+          topRightBadges += '<span class="text-[9px] bg-sky-100 text-sky-800 border border-sky-300 px-1 rounded font-bold shadow-2xs">💼ปกติคู่</span>';
+        }
 
         dayCell.innerHTML = `
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-xs font-bold ${isToday ? 'w-5 h-5 rounded-full bg-pink-500 text-white flex items-center justify-center' : 'text-slate-600'}">${day}</span>
-            ${bothOff ? '<span class="text-[9px] bg-yellow-100 text-yellow-800 border border-yellow-300 px-1 rounded font-bold">✨ว่าง</span>' : ''}
+          <div class="flex items-center justify-between mb-1 gap-0.5 flex-wrap">
+            <div class="flex items-center">
+              <span class="text-xs font-bold ${dayNumColor}">${day}</span>
+              ${weekendMiniBadge}
+            </div>
+            ${topRightBadges}
           </div>
           <div class="flex-1 flex flex-col justify-end">
             ${badgesHtml}
           </div>
         `;
 
-        if (bothOff) {
-          dayCell.classList.add('bg-yellow-50/40');
+        if (hasBToD) {
+          dayCell.classList.add('ring-2', 'ring-inset', 'ring-red-500', 'bg-orange-50/70');
+        } else if (bothOff) {
+          dayCell.classList.add('ring-2', 'ring-inset', 'ring-amber-300');
+        } else if (bothNormal) {
+          dayCell.classList.add('ring-1', 'ring-inset', 'ring-sky-300');
         }
 
         grid.appendChild(dayCell);
@@ -751,22 +876,66 @@
         const monthQuery = getMonthQuery(currentDate);
         const res = await fetch(`/api/free-days?month=${monthQuery}`).then(r => r.json());
         const count = res.count || 0;
-        document.getElementById('freeDaysCountText').innerText = `วันหยุดตรงกัน: ${count} วัน`;
+        const normalCount = res.normal_match_count || 0;
+        const bToDCount = res.b_to_d_count || 0;
 
+        document.getElementById('freeDaysCountText').innerText = `หยุดตรงกัน: ${count} วัน`;
+        const normalBadgeEl = document.getElementById('normalMatchCountText');
+        if (normalBadgeEl) normalBadgeEl.innerText = `ปกติตรงกัน: ${normalCount} วัน`;
+        const bToDBadgeEl = document.getElementById('bToDCountText');
+        if (bToDBadgeEl) bToDBadgeEl.innerText = `บ่ายต่อดึก: ${bToDCount} ครั้ง`;
+
+        // 1. Free Days (Both Off)
         const listContainer = document.getElementById('freeDaysList');
         listContainer.innerHTML = '';
         if (res.free_days && res.free_days.length > 0) {
           res.free_days.forEach(item => {
             const d = new Date(item.date);
+            const dow = d.getDay();
+            const wkLabel = dow === 0 ? ' (อา.)' : (dow === 6 ? ' (ส.)' : '');
             const badge = document.createElement('span');
             badge.className = "inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-pink-50 border border-pink-200 text-pink-700 text-xs font-semibold";
-            badge.innerHTML = `<i data-lucide="heart" class="w-3 h-3 text-pink-500 fill-pink-500"></i><span>${d.getDate()} ${THAI_MONTHS[d.getMonth() + 1]}</span>`;
+            badge.innerHTML = `<i data-lucide="heart" class="w-3 h-3 text-pink-500 fill-pink-500"></i><span>${d.getDate()} ${THAI_MONTHS[d.getMonth() + 1]}${wkLabel}</span>`;
             listContainer.appendChild(badge);
           });
-          lucide.createIcons();
         } else {
-          listContainer.innerHTML = `<span class="text-xs text-slate-400">เดือนนี้ยังไม่มีวันหยุดตรงกัน หรือยังไม่ได้บันทึกข้อมูล</span>`;
+          listContainer.innerHTML = `<span class="text-xs text-slate-400">เดือนนี้ยังไม่มีวันหยุดตรงกัน</span>`;
         }
+
+        // 2. Normal Match Days (Both ปกติ)
+        const normalContainer = document.getElementById('normalMatchDaysList');
+        if (normalContainer) {
+          normalContainer.innerHTML = '';
+          if (res.normal_match_days && res.normal_match_days.length > 0) {
+            res.normal_match_days.forEach(item => {
+              const d = new Date(item.date);
+              const badge = document.createElement('span');
+              badge.className = "inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 text-xs font-semibold";
+              badge.innerHTML = `<span>💼 ${d.getDate()} ${THAI_MONTHS[d.getMonth() + 1]} (เลิก 16:00)</span>`;
+              normalContainer.appendChild(badge);
+            });
+          } else {
+            normalContainer.innerHTML = `<span class="text-xs text-slate-400">ยังไม่มีวันทำงานปกติตรงกัน</span>`;
+          }
+        }
+
+        // 3. Afternoon to Night (บ่ายต่อดึก) Alerts
+        const bToDContainer = document.getElementById('bToDAlertsList');
+        if (bToDContainer) {
+          bToDContainer.innerHTML = '';
+          if (res.b_to_d_alerts && res.b_to_d_alerts.length > 0) {
+            res.b_to_d_alerts.forEach(item => {
+              const badge = document.createElement('div');
+              badge.className = "flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold";
+              badge.innerHTML = `<span>🔥</span><span>${item.reason}</span>`;
+              bToDContainer.appendChild(badge);
+            });
+          } else {
+            bToDContainer.innerHTML = `<span class="text-xs text-emerald-600 font-medium">✅ ไม่มีเวรบ่ายต่อดึกในเดือนนี้</span>`;
+          }
+        }
+
+        lucide.createIcons();
       } catch (e) {
         console.error("Free days error:", e);
       }
@@ -900,19 +1069,33 @@
 
         let shiftsSummary = item.shifts.map((s, dIdx) => {
           const dNum = parseInt(s.date.split('-')[2]);
+          const dtObj = new Date(s.date);
+          const dow = dtObj.getDay();
+          const isSun = (dow === 0);
+          const isSat = (dow === 6);
+          const wkPrefix = isSun ? '<span class="text-[9px] text-rose-600 font-bold mr-0.5">[อา]</span>' : (isSat ? '<span class="text-[9px] text-purple-600 font-bold mr-0.5">[ส]</span>' : '');
+
+          const prevCode = dIdx > 0 ? item.shifts[dIdx - 1].shift_code : '';
+          const nextCode = dIdx < item.shifts.length - 1 ? item.shifts[dIdx + 1].shift_code : '';
+          const isBToD = (s.shift_code.includes('บ') && nextCode.includes('ด')) || (prevCode.includes('บ') && s.shift_code.includes('ด'));
+
           const isDuty = !NON_DUTY.includes(s.shift_code);
           const isAfternoon = (s.shift_code === "บ");
           let badgeClass = "bg-white border-slate-200 text-slate-600 hover:border-slate-400";
-          if (isAfternoon) {
+          if (isBToD) {
+            badgeClass = "bg-orange-100 border-red-400 text-red-900 font-bold ring-1 ring-red-400 hover:bg-orange-200";
+          } else if (isAfternoon) {
             badgeClass = "bg-amber-100 border-amber-300 text-amber-900 font-bold hover:bg-amber-200";
           } else if (isDuty) {
             badgeClass = "bg-sky-100 border-sky-300 text-sky-900 font-bold hover:bg-sky-200";
           } else if (s.shift_code === "Off") {
-            badgeClass = "bg-emerald-50 border-emerald-200 text-emerald-700 font-medium";
+            badgeClass = (isSun || isSat)
+              ? "bg-purple-50 border-purple-200 text-purple-700 font-semibold"
+              : "bg-emerald-50 border-emerald-200 text-emerald-700 font-medium";
           }
           return `
             <button type="button" onclick="cycleShiftCode(${idx}, ${dIdx})" class="inline-flex items-center px-1.5 py-0.5 m-0.5 rounded border text-[11px] font-medium transition cursor-pointer hover:scale-105 shadow-2xs ${badgeClass}" title="คลิกเพื่อเปลี่ยนเวรวันนี้ (บ ➡️ ช ➡️ ด ➡️ Off ➡️ ปกติ)">
-              <span class="opacity-75">${dNum}:</span> <b class="ml-1">${s.shift_code}</b>
+              ${wkPrefix}<span class="opacity-75">${dNum}:</span> <b class="ml-1">${isBToD ? '🔥' : ''}${s.shift_code}</b>
             </button>
           `;
         }).join('');

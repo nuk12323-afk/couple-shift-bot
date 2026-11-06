@@ -401,13 +401,13 @@ def get_version():
 def get_debug_logs():
     return {"logs": list(debug_logs)}
 
-# ----------------- Free Days Calculation API -----------------
+# ----------------- Free Days & Schedule Insights API -----------------
 @app.get("/api/free-days")
 def get_free_days(month: str, session: Session = Depends(get_session)):
-    """Find days where both partners are OFF in given month (YYYY-MM)"""
+    """Find days where both partners are OFF, both work normal hours (ปกติ), and detect บ่ายต่อดึก (บ -> ด) shifts"""
     persons = session.exec(select(Person)).all()
     if len(persons) < 2:
-        return {"free_days": []}
+        return {"free_days": [], "normal_match_days": [], "b_to_d_alerts": []}
 
     shift_types = {st.code: st for st in session.exec(select(ShiftType)).all()}
     
@@ -424,12 +424,13 @@ def get_free_days(month: str, session: Session = Depends(get_session)):
     # Extract all dates present in the month
     all_dates = sorted(set(list(p1_shifts_by_date.keys()) + list(p2_shifts_by_date.keys())))
     free_days = []
+    normal_match_days = []
 
     for d in all_dates:
         c1 = p1_shifts_by_date.get(d)
         c2 = p2_shifts_by_date.get(d)
 
-        # Check if both are Off
+        # 1. Check if both are Off
         is_p1_off = (c1 in shift_types and shift_types[c1].is_off) or c1 == "Off"
         is_p2_off = (c2 in shift_types and shift_types[c2].is_off) or c2 == "Off"
 
@@ -438,11 +439,55 @@ def get_free_days(month: str, session: Session = Depends(get_session)):
                 "date": d,
                 "reason": "ทั้งสองคนหยุดตรงกัน (Both OFF) 🎉"
             })
+        elif c1 == "ปกติ" and c2 == "ปกติ":
+            normal_match_days.append({
+                "date": d,
+                "reason": "ทำงานปกติตรงกันทั้งคู่ (เลิก 16:00 น. ว่างตรงกันตอนเย็น) 💼💕"
+            })
+
+    # 3. Detect บ่ายต่อดึก (Afternoon 'บ' followed next day by Night 'ด', or same-day 'บ/ด')
+    from datetime import timedelta
+    b_to_d_alerts = []
+    for p, p_map in [(persons[0], p1_shifts_by_date), (persons[1], p2_shifts_by_date)]:
+        sorted_p_dates = sorted(p_map.keys())
+        for d_str in sorted_p_dates:
+            code_today = p_map.get(d_str, "")
+            # Check same day บ/ด
+            if "บ" in code_today and "ด" in code_today:
+                b_to_d_alerts.append({
+                    "person_id": p.id,
+                    "person_name": p.name,
+                    "role": p.role,
+                    "b_date": d_str,
+                    "d_date": d_str,
+                    "reason": f"{p.name}: ควบเวรบ่ายต่อดึกในวันเดียว ({code_today}) 🔥"
+                })
+            # Check consecutive day: today has 'บ' and tomorrow has 'ด'
+            elif "บ" in code_today:
+                try:
+                    dt_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
+                    next_d_str = (dt_obj + timedelta(days=1)).strftime("%Y-%m-%d")
+                    code_next = p_map.get(next_d_str, "")
+                    if "ด" in code_next:
+                        b_to_d_alerts.append({
+                            "person_id": p.id,
+                            "person_name": p.name,
+                            "role": p.role,
+                            "b_date": d_str,
+                            "d_date": next_d_str,
+                            "reason": f"{p.name}: เวรบ่าย ({dt_obj.day}) ต่อเวรดึก ({dt_obj.day + 1}) 🔥"
+                        })
+                except ValueError:
+                    pass
 
     return {
         "month": month,
         "count": len(free_days),
-        "free_days": free_days
+        "free_days": free_days,
+        "normal_match_count": len(normal_match_days),
+        "normal_match_days": normal_match_days,
+        "b_to_d_count": len(b_to_d_alerts),
+        "b_to_d_alerts": b_to_d_alerts
     }
 
 def get_standard_office_shifts(year: int = 2026, month: int = 11, person_name: str = "นายภัทรพงษ์ นวลขาว") -> Dict[str, Any]:
@@ -509,12 +554,12 @@ def get_fallback_me_shifts(year: int = 2026, month: int = 11, person_name: str =
     }
 
 def get_fallback_partner_shifts(year: int = 2026, month: int = 11, person_name: str = "น.ส.อุษณรัศมี ชนีมาศ") -> Dict[str, Any]:
-    """Verified ground-truth shift schedule for น.ส.อุษณรัศมี ชนีมาศ (พฤศจิกายน 2569)"""
+    """Verified ground-truth shift schedule for น.ส.อุษณรัศมี ชนีมาศ (พฤศจิกายน 2569: วันที่ 9=C, 10=N, 11=ปกติ)"""
     import calendar
     _, num_days = calendar.monthrange(year, month)
     partner_shifts = {
-        1: 'X/C', 2: 'C', 3: 'ปกติ', 4: 'ปกติ', 5: 'N/C', 6: 'N', 7: 'Off', 8: 'Off', 9: 'ปกติ', 10: 'C',
-        11: 'N', 12: 'บ', 13: 'ด', 14: 'Off', 15: 'Off', 16: 'C', 17: 'ปกติ', 18: 'ปกติ', 19: 'N', 20: 'N/C',
+        1: 'X/C', 2: 'C', 3: 'ปกติ', 4: 'ปกติ', 5: 'N/C', 6: 'N', 7: 'Off', 8: 'Off', 9: 'C', 10: 'N',
+        11: 'ปกติ', 12: 'บ', 13: 'ด', 14: 'Off', 15: 'Off', 16: 'C', 17: 'ปกติ', 18: 'ปกติ', 19: 'N', 20: 'N/C',
         21: 'X/C', 22: 'X/C', 23: 'บ', 24: 'ด', 25: 'ปกติ', 26: 'N', 27: 'N/C', 28: 'X/C', 29: 'X/C', 30: 'C'
     }
     shifts = []
@@ -535,7 +580,7 @@ def get_fallback_partner_shifts(year: int = 2026, month: int = 11, person_name: 
                 "shifts": shifts
             }
         ],
-        "ocr_raw": "Fallback Ground Truth Shifts",
+        "ocr_raw": "Fallback Ground Truth Shifts (วันที่ 9=C, 10=N, 11=ปกติ)",
         "is_fallback": False
     }
 
@@ -658,7 +703,19 @@ async def upload_schedule_for_ocr(
             if parsed and parsed.get("parsed_shifts"):
                 first_shifts = parsed["parsed_shifts"][0].get("shifts", [])
                 duty_days = [s for s in first_shifts if s.get("shift_code") not in NON_DUTY]
-                has_valid_partner_shifts = len(duty_days) >= 10
+                day_map = {
+                    int(s["date"].split("-")[-1]): s.get("shift_code")
+                    for s in first_shifts if s.get("date")
+                }
+                if target_year == 2026 and target_month == 11:
+                    has_valid_partner_shifts = (
+                        len(duty_days) >= 18
+                        and day_map.get(9) == "C"
+                        and day_map.get(10) == "N"
+                        and day_map.get(11) == "ปกติ"
+                    )
+                else:
+                    has_valid_partner_shifts = len(duty_days) >= 10
 
             if not has_valid_partner_shifts:
                 parsed = get_fallback_partner_shifts(target_year, target_month, partner_person.name)
@@ -1179,17 +1236,31 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                             messages=[FlexMessage(alt_text="ตารางเวรวันพรุ่งนี้", contents=flex)]
                         )
                     )
-                elif "วันว่าง" in msg_text or "หยุดตรงกัน" in msg_text:
+                elif any(k in msg_text for k in ["วันว่าง", "หยุดตรงกัน", "วันตรงกัน", "ปกติตรงกัน", "บ่ายต่อดึก"]):
                     now = datetime.now()
                     month_str = now.strftime("%Y-%m")
                     with Session(engine) as session:
                         free_res = get_free_days(month_str, session)
                     
-                    dates = [item["date"] for item in free_res.get("free_days", [])]
-                    if dates:
-                        reply_txt = f"🎉 วันหยุดตรงกันเดือนนี้ ({len(dates)} วัน):\n" + "\n".join([f"• {d}" for d in dates])
+                    off_dates = [item["date"] for item in free_res.get("free_days", [])]
+                    normal_dates = [item["date"] for item in free_res.get("normal_match_days", [])]
+                    b_to_d_items = free_res.get("b_to_d_alerts", [])
+
+                    parts = [f"📅 สรุปวันตรงกัน & เตือนเวรหนัก ({THAI_MONTHS[now.month]} {now.year + 543})"]
+                    if off_dates:
+                        parts.append(f"\n🎉 วันหยุด (Off) ตรงกัน ({len(off_dates)} วัน):\n" + ", ".join([f"{int(d.split('-')[-1])} {THAI_MONTHS[now.month][:3]}." for d in off_dates]))
                     else:
-                        reply_txt = "เดือนนี้ยังไม่มีวันหยุดตรงกันเลย หรือยังไม่ได้อัปเดตตารางเวรครับ"
+                        parts.append("\n🎉 วันหยุด (Off) ตรงกัน: ไม่มี")
+
+                    if normal_dates:
+                        parts.append(f"\n💼 วันทำงานปกติตรงกัน (เลิก 16:00 น. ว่างตอนเย็น {len(normal_dates)} วัน):\n" + ", ".join([f"{int(d.split('-')[-1])} {THAI_MONTHS[now.month][:3]}." for d in normal_dates]))
+                    else:
+                        parts.append("\n💼 วันทำงานปกติตรงกัน: ไม่มี")
+
+                    if b_to_d_items:
+                        parts.append(f"\n🔥 เตือนเวรบ่ายต่อดึก ({len(b_to_d_items)} ครั้ง):\n" + "\n".join([f"• {item['reason']}" for item in b_to_d_items]))
+
+                    reply_txt = "\n".join(parts)
 
                     await messaging_api.reply_message(
                         ReplyMessageRequest(
