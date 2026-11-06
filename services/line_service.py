@@ -173,7 +173,7 @@ def build_daily_flex_message(target_date: date, shifts_data: List[Dict], title_p
     for item in shifts_data:
         p = item["person"]
         s = item["shift"]
-        role_label = "🧑 ฉัน" if p.role == "me" else "👩 แฟน"
+        role_icon = "🧑" if p.role == "me" else "👩"
         b_to_d = s.get("b_to_d_alert")
 
         card_contents = [
@@ -183,7 +183,7 @@ def build_daily_flex_message(target_date: date, shifts_data: List[Dict], title_p
                 "contents": [
                     {
                         "type": "text",
-                        "text": f"{role_label}: {p.name}",
+                        "text": f"{role_icon} {p.name}",
                         "weight": "bold",
                         "size": "sm",
                         "color": "#1E293B",
@@ -494,8 +494,8 @@ def build_ocr_confirm_flex_message(parsed_data: Dict[str, Any]) -> FlexContainer
                             "height": "sm",
                             "action": {
                                 "type": "message",
-                                "label": "👩 บันทึกให้แฟน",
-                                "text": "ยืนยันบันทึกตารางเวรแฟน"
+                                "label": "👩 น.ส.อุษณรัศมี",
+                                "text": "ยืนยันบันทึกตารางเวร อุษณรัศมี"
                             }
                         },
                         {
@@ -505,15 +505,15 @@ def build_ocr_confirm_flex_message(parsed_data: Dict[str, Any]) -> FlexContainer
                             "height": "sm",
                             "action": {
                                 "type": "message",
-                                "label": "🧑 บันทึกให้ฉัน",
-                                "text": "ยืนยันบันทึกตารางเวรฉัน"
+                                "label": "🧑 นายภัทรพงษ์",
+                                "text": "ยืนยันบันทึกตารางเวร ภัทรพงษ์"
                             }
                         }
                     ]
                 },
                 {
                     "type": "text",
-                    "text": "💡 เลือกได้เลยว่าตารางเวรนี้เป็นของแฟน หรือของฉันครับ",
+                    "text": "💡 เลือกชื่อคนที่ต้องการบันทึกตารางเวรนี้ได้เลยครับ",
                     "size": "xxs",
                     "color": "#94A3B8",
                     "align": "center",

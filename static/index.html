@@ -89,9 +89,9 @@
 
       <!-- Action Buttons & Free Days Pill -->
       <div class="flex flex-wrap items-center gap-2">
-        <button onclick="presetStandardOfficeMonth()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold shadow-sm transition" title="ลงเวลาทำงานปกติ จันทร์-ศุกร์ และหยุดเสาร์-อาทิตย์ ให้ฉัน">
+        <button onclick="presetStandardOfficeMonth()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold shadow-sm transition" title="ลงเวลาทำงานปกติ จันทร์-ศุกร์ และหยุดเสาร์-อาทิตย์">
           <i data-lucide="briefcase" class="w-3.5 h-3.5 text-emerald-600"></i>
-          <span>ลงเวรปกติของฉัน (จ-ศ)</span>
+          <span>ลงเวรปกติ (จ-ศ)</span>
         </button>
         <button onclick="openBatchFillModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-semibold shadow-sm transition">
           <i data-lucide="calendar-plus" class="w-3.5 h-3.5 text-sky-600"></i>
@@ -995,7 +995,7 @@
         persons.forEach(p => {
           const opt = document.createElement('option');
           opt.value = p.id;
-          opt.innerText = `${p.role === 'partner' ? '👩 แฟน' : '🧑 ฉัน'}: ${p.name}`;
+          opt.innerText = `${p.role === 'partner' ? '👩' : '🧑'} ${p.name}`;
           pSelect.appendChild(opt);
         });
         const partner = persons.find(x => x.role === 'partner');
@@ -1147,7 +1147,7 @@
         const personOptionsHtml = persons.map(p => {
           const isSelected = (String(p.id) === String(item.person_id));
           return `<option value="${p.id}" ${isSelected ? 'selected' : ''}>
-            ${p.role === 'partner' ? '👩 แฟน' : '🧑 ฉัน'}: ${p.name}
+            ${p.role === 'partner' ? '👩' : '🧑'} ${p.name}
           </option>`;
         }).join('');
 
@@ -1156,13 +1156,8 @@
             <div class="flex items-start gap-2">
               <span class="text-base shrink-0">⚠️</span>
               <div>
-                <p class="font-bold text-rose-900">ตรวจพบตารางเวรของแฟน (ไม่พบชื่อคุณในเอกสารโรงพยาบาลนี้)</p>
+                <p class="font-bold text-rose-900">ตรวจพบตารางเวรของ ${item.person_name}</p>
                 <p class="text-rose-700 mt-0.5">${item.notice.replace(/\n/g, '<br>')}</p>
-                <div class="mt-2">
-                  <button type="button" onclick="presetStandardOfficeMonth()" class="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-rose-100 text-rose-900 border border-rose-300 rounded-lg text-xs font-semibold shadow-xs transition">
-                    💼 กดเพื่อลงเวลาทำงานปกติทั้งเดือนให้ฉัน (จ-ศ ปกติ, ส-อา หยุด)
-                  </button>
-                </div>
               </div>
             </div>
           </div>
