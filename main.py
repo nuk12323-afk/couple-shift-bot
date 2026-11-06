@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, date, timezone
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Request, Header, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Request, Header, BackgroundTasks, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -91,6 +91,13 @@ class BatchShiftItem(BaseModel):
 class BatchShiftSave(BaseModel):
     person_id: int
     shifts: List[BatchShiftItem]
+
+class BatchFillRequest(BaseModel):
+    person_id: int
+    start_date: str
+    end_date: str
+    shift_code: str
+    rule: Optional[str] = "all"  # "all", "weekdays", "weekends"
 
 class PersonUpdate(BaseModel):
     name: str
@@ -201,6 +208,69 @@ def delete_shift(shift_id: int, session: Session = Depends(get_session)):
     session.delete(shift)
     session.commit()
     return {"success": True}
+
+@app.post("/api/shifts/batch-fill")
+def batch_fill_shifts(data: BatchFillRequest, session: Session = Depends(get_session)):
+    """Fill shifts across a date range with day-of-week rule (all, weekdays, weekends)"""
+    from datetime import datetime, timedelta
+    start = datetime.strptime(data.start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(data.end_date, "%Y-%m-%d").date()
+    
+    current = start
+    filled_count = 0
+    while current <= end:
+        weekday = current.weekday()
+        match = False
+        if data.rule == "all":
+            match = True
+        elif data.rule == "weekdays" and weekday < 5:
+            match = True
+        elif data.rule == "weekends" and weekday >= 5:
+            match = True
+
+        if match:
+            date_str = current.strftime("%Y-%m-%d")
+            existing = session.exec(
+                select(Shift).where(
+                    Shift.person_id == data.person_id,
+                    Shift.shift_date == date_str
+                )
+            ).first()
+            if existing:
+                existing.shift_code = data.shift_code
+                existing.updated_at = datetime.now(timezone.utc)
+                session.add(existing)
+            else:
+                session.add(Shift(person_id=data.person_id, shift_date=date_str, shift_code=data.shift_code))
+            filled_count += 1
+        current += timedelta(days=1)
+
+    session.commit()
+    return {"success": True, "filled_count": filled_count}
+
+@app.delete("/api/shifts/clear")
+def clear_shifts(
+    month: Optional[str] = Query(None, description="Month in YYYY-MM format"),
+    person_id: Optional[int] = Query(None, description="Person ID (optional)"),
+    all_shifts: bool = Query(False, description="Clear all shifts in DB"),
+    session: Session = Depends(get_session)
+):
+    """Bulk delete shifts by month, person, or all"""
+    query = select(Shift)
+    if not all_shifts:
+        if month:
+            query = query.where(Shift.shift_date.startswith(month))
+        if person_id:
+            query = query.where(Shift.person_id == person_id)
+        if not month and not person_id:
+            raise HTTPException(status_code=400, detail="Must specify month, person_id, or all_shifts=true")
+    
+    shifts_to_delete = session.exec(query).all()
+    count = len(shifts_to_delete)
+    for s in shifts_to_delete:
+        session.delete(s)
+    session.commit()
+    return {"success": True, "deleted_count": count}
 
 # ----------------- Persons API -----------------
 @app.get("/api/persons")
@@ -710,6 +780,106 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                             messages=[TextMessage(text=reply_text)]
                         )
                     )
+
+                # Handle bulk delete / clear shifts via LINE chat
+                elif any(k in msg_text for k in ["ลบเวร", "ลบตารางเวร", "ล้างเวร", "ล้างตารางเวร", "รีเซ็ตเวร", "รีเซ็ตตารางเวร"]):
+                    now = datetime.now()
+                    with Session(engine) as session:
+                        persons = session.exec(select(Person)).all()
+                        target_person = None
+                        target_person_name = "ทั้งสองคน"
+                        if any(k in msg_text for k in ["แฟน", "อุษณรัศมี"]):
+                            if len(persons) > 1:
+                                target_person = persons[1]
+                                target_person_name = f"แฟน ({target_person.name})"
+                        elif any(k in msg_text for k in ["ฉัน", "ผม", "ภัทรพงษ์"]):
+                            target_person = persons[0]
+                            target_person_name = f"ฉัน ({target_person.name})"
+
+                        # Check if targeting all months or current month
+                        target_month_str = None
+                        if "ทุกเดือน" in msg_text or ("ทั้งหมด" in msg_text and not ("เดือนนี้" in msg_text)):
+                            month_label = "ทั้งหมดทุกเดือน"
+                        else:
+                            target_month_str = now.strftime("%Y-%m")
+                            month_label = f"เดือน {THAI_MONTHS[now.month]} {now.year + 543}"
+
+                        query = select(Shift)
+                        if target_month_str:
+                            query = query.where(Shift.shift_date.startswith(target_month_str))
+                        if target_person:
+                            query = query.where(Shift.person_id == target_person.id)
+
+                        shifts_del = session.exec(query).all()
+                        del_count = len(shifts_del)
+                        for s in shifts_del:
+                            session.delete(s)
+                        session.commit()
+
+                    reply_text = (
+                        f"🗑️ ลบตารางเวรเรียบร้อยแล้วครับ!\n\n"
+                        f"👤 สำหรับ: {target_person_name}\n"
+                        f"📅 ช่วงเวลา: {month_label}\n"
+                        f"🧹 ลบออกทั้งหมด: {del_count} รายการ\n\n"
+                        f"✨ ปฏิทินได้รับการรีเซ็ตแล้ว คุณสามารถเริ่มลงตารางเวรใหม่ หรือส่งรูปตารางเวรเข้ามาให้บอทอ่านใหม่ได้เลยครับ 💕"
+                    )
+                    await messaging_api.reply_message(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token,
+                            messages=[TextMessage(text=reply_text)]
+                        )
+                    )
+
+                # Handle quick batch fill for regular office shifts (Mon-Fri = ปกติ, Sat-Sun = Off)
+                elif any(k in msg_text for k in ["ลงเวรปกติ", "ตั้งเวรปกติ", "เวรปกติทั้งเดือน"]):
+                    now = datetime.now()
+                    import calendar
+                    _, num_days = calendar.monthrange(now.year, now.month)
+                    with Session(engine) as session:
+                        persons = session.exec(select(Person)).all()
+                        target_person = persons[0]
+                        target_persons = [target_person]
+                        target_label = f"ฉัน ({target_person.name})"
+                        if any(k in msg_text for k in ["แฟน", "อุษณรัศมี"]) and len(persons) > 1:
+                            target_person = persons[1]
+                            target_persons = [target_person]
+                            target_label = f"แฟน ({target_person.name})"
+                        elif any(k in msg_text for k in ["ทั้งคู่", "ทั้งสองคน"]):
+                            target_persons = persons
+                            target_label = "ทั้งสองคน"
+
+                        filled = 0
+                        for p in target_persons:
+                            for day in range(1, num_days + 1):
+                                d = date(now.year, now.month, day)
+                                d_str = d.strftime("%Y-%m-%d")
+                                code = "Off" if d.weekday() >= 5 else "ปกติ"
+                                existing = session.exec(
+                                    select(Shift).where(Shift.person_id == p.id, Shift.shift_date == d_str)
+                                ).first()
+                                if existing:
+                                    existing.shift_code = code
+                                    existing.updated_at = datetime.now(timezone.utc)
+                                    session.add(existing)
+                                else:
+                                    session.add(Shift(person_id=p.id, shift_date=d_str, shift_code=code))
+                                filled += 1
+                        session.commit()
+
+                    reply_text = (
+                        f"💼 ลงเวรปกติทั้งเดือนเรียบร้อยแล้วครับ!\n\n"
+                        f"👤 สำหรับ: {target_label}\n"
+                        f"📅 ประจำเดือน: {THAI_MONTHS[now.month]} {now.year + 543} (บันทึก {filled} วัน)\n"
+                        f"• วันจันทร์ - ศุกร์ ➡️ 💼 เวรปกติ (08:00 - 16:00)\n"
+                        f"• วันเสาร์ - อาทิตย์ ➡️ 💤 วันหยุด (Off)\n\n"
+                        f"✨ ข้อมูลในปฏิทินและระบบแจ้งเตือนได้รับการอัปเดตทันทีครับ 💕"
+                    )
+                    await messaging_api.reply_message(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token,
+                            messages=[TextMessage(text=reply_text)]
+                        )
+                    )
                 elif "เวรวันนี้" in msg_text or "วันนี้" in msg_text:
                     today = date.today()
                     shifts_data = get_today_shifts(today.strftime("%Y-%m-%d"))
@@ -752,11 +922,14 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                 elif "ช่วยเหลือ" in msg_text or "help" in msg_text.lower():
                     help_msg = (
                         "🤖 บอทตารางเวรคู่รัก ยินดีรับใช้ครับ:\n\n"
-                        "• ส่ง 'เวรวันนี้' เพื่อดูเวรวันนี้\n"
-                        "• ส่ง 'เวรพรุ่งนี้' เพื่อดูเวรวันพรุ่งนี้\n"
-                        "• ส่ง 'วันว่าง' เพื่อดูวันหยุดตรงกัน\n"
-                        "• ส่งรูปตารางเวรเข้ามา เพื่อให้อ่านด้วย Typhoon OCR อัตโนมัติ!\n\n"
-                        "⏰ ระบบจะส่งเตือนตารางเวรทุกวันเวลา 07:30 น."
+                        "• 'เวรวันนี้' / 'เวรพรุ่งนี้' ➡️ ดูเวรประจำวัน\n"
+                        "• 'วันว่าง' ➡️ ดูวันหยุดตรงกันทั้งคู่\n"
+                        "• 'เปลี่ยนเวร วันที่ 12 แฟนเป็น ด' ➡️ แก้ไขเวรรายวัน\n"
+                        "• 'ลบเวรทั้งหมด' / 'ลบเวรแฟนทั้งหมด' ➡️ ล้างตารางเวร\n"
+                        "• 'ลงเวรปกติทั้งเดือน' ➡️ ลงเวร จ-ศ ปกติ + ส-อ หยุด\n"
+                        "• ส่งรูปตารางเวร ➡️ สแกนอ่านด้วย Typhoon OCR อัตโนมัติ!\n\n"
+                        "🌐 จัดการตารางเวรแบบเต็มบนเว็บได้ที่:\n"
+                        "https://couple-shift-bot.onrender.com"
                     )
                     await messaging_api.reply_message(
                         ReplyMessageRequest(

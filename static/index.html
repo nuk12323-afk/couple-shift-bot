@@ -75,7 +75,7 @@
       </div>
     </section>
 
-    <!-- Month Selector & Free Days Pill -->
+    <!-- Month Selector & Action Buttons -->
     <section class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div class="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm w-fit">
         <button onclick="changeMonth(-1)" class="p-1 hover:bg-slate-100 rounded-lg text-slate-600">
@@ -87,10 +87,20 @@
         </button>
       </div>
 
-      <!-- Free Days Pill -->
-      <div id="freeDaysBadge" class="flex items-center space-x-2 bg-pink-50 border border-pink-200 px-3 py-1.5 rounded-xl text-pink-700 text-xs font-medium">
-        <i data-lucide="heart" class="w-4 h-4 text-pink-500 fill-pink-500"></i>
-        <span id="freeDaysCountText">วันหยุดตรงกัน: 0 วัน</span>
+      <!-- Action Buttons & Free Days Pill -->
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="openBatchFillModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-semibold shadow-sm transition">
+          <i data-lucide="calendar-plus" class="w-3.5 h-3.5 text-sky-600"></i>
+          <span>เพิ่ม/ลงเวรเป็นชุด</span>
+        </button>
+        <button onclick="openClearShiftsModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold shadow-sm transition">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5 text-rose-600"></i>
+          <span>ลบตารางเวร</span>
+        </button>
+        <div id="freeDaysBadge" class="flex items-center space-x-2 bg-pink-50 border border-pink-200 px-3 py-1.5 rounded-xl text-pink-700 text-xs font-medium">
+          <i data-lucide="heart" class="w-4 h-4 text-pink-500 fill-pink-500"></i>
+          <span id="freeDaysCountText">วันหยุดตรงกัน: 0 วัน</span>
+        </div>
       </div>
     </section>
 
@@ -343,6 +353,129 @@
       <button onclick="saveDayEdits()" class="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow">
         บันทึก
       </button>
+    </div>
+  </div>
+
+  <!-- Clear Shifts Modal -->
+  <div id="clearShiftsModal" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div class="flex items-center space-x-2 text-rose-600">
+          <i data-lucide="trash-2" class="w-5 h-5"></i>
+          <h3 class="text-sm font-bold text-slate-800">ลบตารางเวร</h3>
+        </div>
+        <button onclick="closeClearShiftsModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">เลือกว่าจะลบของใคร:</label>
+          <select id="clearPersonSelect" class="w-full p-2.5 rounded-xl border border-slate-200 bg-white">
+            <option value="all">ทั้งสองคน (ทั้งหมด)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">ขอบเขตช่วงเวลา:</label>
+          <div class="space-y-1.5 p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <label class="flex items-center space-x-2 cursor-pointer">
+              <input type="radio" name="clearScope" value="month" checked class="text-rose-600 focus:ring-rose-500">
+              <span class="text-slate-700">เฉพาะเดือนที่เปิดดูอยู่ (<span id="clearScopeMonthText" class="font-bold text-rose-600">พฤศจิกายน 2569</span>)</span>
+            </label>
+            <label class="flex items-center space-x-2 cursor-pointer">
+              <input type="radio" name="clearScope" value="all_months" class="text-rose-600 focus:ring-rose-500">
+              <span class="text-slate-700">ลบทั้งหมดทุกเดือนในระบบ</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="p-3 bg-rose-50 border border-rose-100 rounded-xl text-[11px] text-rose-700 flex items-start space-x-2">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-500 shrink-0 mt-0.5"></i>
+          <span>การลบจะนำข้อมูลเวรออกจากปฏิทิน คุณสามารถเพิ่มใหม่หรือส่งรูปตารางเวรเข้ามาใหม่ได้ตลอดเวลาครับ</span>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-2 pt-1">
+        <button onclick="closeClearShiftsModal()" class="w-1/2 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold">
+          ยกเลิก
+        </button>
+        <button onclick="submitClearShifts()" class="w-1/2 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow">
+          ยืนยันการลบ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Fill Shifts Modal -->
+  <div id="batchFillModal" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div class="flex items-center space-x-2 text-sky-600">
+          <i data-lucide="calendar-plus" class="w-5 h-5"></i>
+          <h3 class="text-sm font-bold text-slate-800">เพิ่ม / ลงเวรเป็นชุด</h3>
+        </div>
+        <button onclick="closeBatchFillModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">เลือกบุคคล:</label>
+          <select id="batchPersonSelect" class="w-full p-2.5 rounded-xl border border-slate-200 bg-white">
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">ตั้งแต่วันที่:</label>
+            <input type="date" id="batchStartDate" class="w-full p-2 rounded-xl border border-slate-200 bg-white text-xs">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">ถึงวันที่:</label>
+            <input type="date" id="batchEndDate" class="w-full p-2 rounded-xl border border-slate-200 bg-white text-xs">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">เลือกประเภทเวรที่ต้องการลง:</label>
+          <select id="batchShiftTypeSelect" class="w-full p-2.5 rounded-xl border border-slate-200 bg-white">
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">กฎการลงเวร:</label>
+          <div class="space-y-1.5 p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <label class="flex items-center space-x-2 cursor-pointer">
+              <input type="radio" name="batchRule" value="all" checked class="text-sky-600 focus:ring-sky-500">
+              <span class="text-slate-700">ทุกวันในช่วงที่เลือก</span>
+            </label>
+            <label class="flex items-center space-x-2 cursor-pointer">
+              <input type="radio" name="batchRule" value="weekdays" class="text-sky-600 focus:ring-sky-500">
+              <span class="text-slate-700">เฉพาะวันจันทร์ - ศุกร์ (เว้นเสาร์-อาทิตย์)</span>
+            </label>
+            <label class="flex items-center space-x-2 cursor-pointer">
+              <input type="radio" name="batchRule" value="weekends" class="text-sky-600 focus:ring-sky-500">
+              <span class="text-slate-700">เฉพาะวันเสาร์ - อาทิตย์</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Quick Template Preset Button -->
+        <div class="pt-1">
+          <button type="button" onclick="presetStandardOfficeMonth()" class="w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-medium text-[11px] flex items-center justify-center space-x-1.5 transition">
+            <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-600"></i>
+            <span>⚡ ทางลัด: ตั้งค่าเวรปกติ (จ-ศ ปกติ / ส-อา Off) ทั้งเดือนนี้</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-2 pt-1">
+        <button onclick="closeBatchFillModal()" class="w-1/2 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold">
+          ยกเลิก
+        </button>
+        <button onclick="submitBatchFill()" class="w-1/2 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow">
+          บันทึกเวร
+        </button>
+      </div>
     </div>
   </div>
 
@@ -795,6 +928,153 @@
       closeEditModal();
       shifts = await fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json());
       renderAll();
+    }
+
+    // Clear Shifts Modal Functions
+    function openClearShiftsModal() {
+      const pSelect = document.getElementById('clearPersonSelect');
+      pSelect.innerHTML = `<option value="all">ทั้งสองคน (${persons.map(p => p.name).join(' & ')})</option>` +
+        persons.map(p => `<option value="${p.id}">เฉพาะ ${p.name}</option>`).join('');
+      
+      const mLabel = `${THAI_MONTHS[currentDate.getMonth() + 1]} ${currentDate.getFullYear() + 543}`;
+      document.getElementById('clearScopeMonthText').innerText = mLabel;
+      
+      document.getElementById('clearShiftsModal').classList.remove('hidden');
+      document.getElementById('clearShiftsModal').classList.add('flex');
+    }
+
+    function closeClearShiftsModal() {
+      document.getElementById('clearShiftsModal').classList.add('hidden');
+      document.getElementById('clearShiftsModal').classList.remove('flex');
+    }
+
+    async function submitClearShifts() {
+      const pVal = document.getElementById('clearPersonSelect').value;
+      const scopeVal = document.querySelector('input[name="clearScope"]:checked').value;
+      
+      let url = '/api/shifts/clear?';
+      if (scopeVal === 'all_months') {
+        url += 'all_shifts=true';
+      } else {
+        url += `month=${getMonthQuery(currentDate)}`;
+      }
+      if (pVal !== 'all') {
+        url += `&person_id=${pVal}`;
+      }
+
+      if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลตารางเวรตามที่เลือก?')) return;
+
+      try {
+        const res = await fetch(url, { method: 'DELETE' }).then(r => r.json());
+        if (res.success) {
+          alert(`ลบตารางเวรสำเร็จแล้ว (${res.deleted_count} วัน)`);
+          closeClearShiftsModal();
+          shifts = await fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json());
+          renderAll();
+        } else {
+          alert('เกิดข้อผิดพลาดในการลบตารางเวร');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('เกิดข้อผิดพลาด: ' + e);
+      }
+    }
+
+    // Batch Fill Shifts Modal Functions
+    function openBatchFillModal() {
+      const pSelect = document.getElementById('batchPersonSelect');
+      pSelect.innerHTML = persons.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+      
+      const stSelect = document.getElementById('batchShiftTypeSelect');
+      stSelect.innerHTML = shiftTypes.map(st => `<option value="${st.code}">${st.icon} ${st.code} - ${st.name}</option>`).join('');
+
+      // Set default dates to first and last day of current viewed month
+      const y = currentDate.getFullYear();
+      const m = currentDate.getMonth() + 1;
+      const lastDay = new Date(y, m, 0).getDate();
+      document.getElementById('batchStartDate').value = `${y}-${String(m).padStart(2, '0')}-01`;
+      document.getElementById('batchEndDate').value = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+      document.getElementById('batchFillModal').classList.remove('hidden');
+      document.getElementById('batchFillModal').classList.add('flex');
+    }
+
+    function closeBatchFillModal() {
+      document.getElementById('batchFillModal').classList.add('hidden');
+      document.getElementById('batchFillModal').classList.remove('flex');
+    }
+
+    async function submitBatchFill() {
+      const personId = parseInt(document.getElementById('batchPersonSelect').value);
+      const startDate = document.getElementById('batchStartDate').value;
+      const endDate = document.getElementById('batchEndDate').value;
+      const shiftCode = document.getElementById('batchShiftTypeSelect').value;
+      const rule = document.querySelector('input[name="batchRule"]:checked').value;
+
+      if (!startDate || !endDate) {
+        alert('กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/shifts/batch-fill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            person_id: personId,
+            start_date: startDate,
+            end_date: endDate,
+            shift_code: shiftCode,
+            rule: rule
+          })
+        }).then(r => r.json());
+
+        if (res.success) {
+          alert(`บันทึกเวรเรียบร้อยแล้ว (${res.filled_count} วัน)`);
+          closeBatchFillModal();
+          shifts = await fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json());
+          renderAll();
+        } else {
+          alert('เกิดข้อผิดพลาดในการบันทึก');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('เกิดข้อผิดพลาด: ' + e);
+      }
+    }
+
+    async function presetStandardOfficeMonth() {
+      const personId = parseInt(document.getElementById('batchPersonSelect').value);
+      const y = currentDate.getFullYear();
+      const m = currentDate.getMonth() + 1;
+      const lastDay = new Date(y, m, 0).getDate();
+      const start = `${y}-${String(m).padStart(2, '0')}-01`;
+      const end = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+      if (!confirm(`ต้องการตั้งค่าเดือนนี้ให้ วันจันทร์-ศุกร์ = เวรปกติ และ วันเสาร์-อาทิตย์ = วันหยุด (Off) ใช่หรือไม่?`)) return;
+
+      try {
+        // Step 1: Weekdays = ปกติ
+        await fetch('/api/shifts/batch-fill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ person_id: personId, start_date: start, end_date: end, shift_code: 'ปกติ', rule: 'weekdays' })
+        });
+        // Step 2: Weekends = Off
+        await fetch('/api/shifts/batch-fill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ person_id: personId, start_date: start, end_date: end, shift_code: 'Off', rule: 'weekends' })
+        });
+
+        alert('ตั้งค่าเวรปกติทั้งเดือนเรียบร้อยแล้ว!');
+        closeBatchFillModal();
+        shifts = await fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json());
+        renderAll();
+      } catch (e) {
+        console.error(e);
+        alert('เกิดข้อผิดพลาด: ' + e);
+      }
     }
 
     // Initialize on load
