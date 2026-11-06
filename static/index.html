@@ -188,6 +188,25 @@
           </div>
         </div>
 
+        <!-- Person Selector for OCR -->
+        <div class="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+              <span>👤 ตารางเวรนี้เป็นของใคร:</span>
+              <span class="text-[10px] text-sky-600 font-semibold bg-sky-50 px-2 py-0.5 rounded-full border border-sky-100">AI จะดึงเวรของคนนี้</span>
+            </label>
+            <select id="ocrPersonSelect" onchange="handleOcrPersonChange()" class="w-full text-xs p-2.5 rounded-xl border border-slate-200 bg-white font-semibold text-slate-700 focus:ring-2 focus:ring-sky-400 outline-none">
+              <!-- Populated dynamically -->
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-1">
+              🔍 ชื่อหรือคำค้นหาในใบตารางเวร:
+            </label>
+            <input type="text" id="ocrTargetSearchName" placeholder="เช่น อุษณรัศมี หรือ ชนีมาศ" class="w-full text-xs p-2 rounded-xl border border-slate-200 bg-white text-slate-700 outline-none focus:ring-2 focus:ring-sky-400">
+          </div>
+        </div>
+
         <!-- Month & Year Selector for OCR -->
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -751,9 +770,30 @@
 
     // Modal controls
     function openOcrModal() {
+      const pSelect = document.getElementById('ocrPersonSelect');
+      if (pSelect && persons && persons.length > 0) {
+        pSelect.innerHTML = '';
+        persons.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.innerText = `${p.role === 'partner' ? '👩 แฟน' : '🧑 ฉัน'}: ${p.name}`;
+          if (p.role === 'partner') opt.selected = true;
+          pSelect.appendChild(opt);
+        });
+        handleOcrPersonChange();
+      }
       document.getElementById('ocrModal').classList.remove('hidden');
       document.getElementById('ocrModal').classList.add('flex');
     }
+
+    function handleOcrPersonChange() {
+      const selectedId = parseInt(document.getElementById('ocrPersonSelect').value);
+      const p = persons.find(x => x.id === selectedId);
+      if (p) {
+        document.getElementById('ocrTargetSearchName').value = p.name;
+      }
+    }
+
     function closeOcrModal() {
       document.getElementById('ocrModal').classList.add('hidden');
       document.getElementById('ocrModal').classList.remove('flex');
@@ -785,11 +825,15 @@
 
       const month = document.getElementById('ocrMonthSelect').value;
       const year = document.getElementById('ocrYearSelect').value;
+      const personId = document.getElementById('ocrPersonSelect') ? document.getElementById('ocrPersonSelect').value : '';
+      const searchName = document.getElementById('ocrTargetSearchName') ? document.getElementById('ocrTargetSearchName').value.trim() : '';
 
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('target_month', month);
       formData.append('target_year', year);
+      if (personId) formData.append('target_person_id', personId);
+      if (searchName) formData.append('target_search_name', searchName);
 
       document.getElementById('ocrLoading').classList.remove('hidden');
       document.getElementById('ocrPreviewContainer').classList.add('hidden');
@@ -841,9 +885,20 @@
           return `<span class="inline-block px-1.5 py-0.5 m-0.5 rounded border text-[10px] font-medium ${badgeClass}">${dNum}: <b>${s.shift_code}</b></span>`;
         }).join('');
 
+        const personOptionsHtml = persons.map(p => `
+          <option value="${p.id}" ${p.id === item.person_id ? 'selected' : ''}>
+            ${p.role === 'partner' ? '👩 แฟน' : '🧑 ฉัน'}: ${p.name}
+          </option>
+        `).join('');
+
         card.innerHTML = `
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-1">
-            <span class="font-bold text-slate-700">👤 ${item.person_name}</span>
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-1.5">
+            <div class="flex items-center gap-1.5">
+              <span class="font-bold text-slate-700 text-xs">บันทึกให้:</span>
+              <select onchange="updateOcrItemPerson(${idx}, this.value)" class="text-xs font-semibold p-1 px-2 rounded-lg border border-slate-300 bg-white text-slate-800 shadow-2xs">
+                ${personOptionsHtml}
+              </select>
+            </div>
             <div class="flex items-center gap-2">
               <span class="text-xs text-sky-700 font-bold bg-sky-100 px-2 py-0.5 rounded-lg border border-sky-200">🚨 เข้าเวร ${dutyShifts.length} วัน</span>
               <span class="text-[11px] text-slate-500">💼 ปกติ ${normalShifts.length} วัน | 💤 หยุด ${offShifts.length} วัน</span>
@@ -855,6 +910,14 @@
       });
 
       document.getElementById('ocrPreviewContainer').classList.remove('hidden');
+    }
+
+    function updateOcrItemPerson(idx, newPersonId) {
+      if (ocrParsedData && ocrParsedData.parsed_shifts && ocrParsedData.parsed_shifts[idx]) {
+        ocrParsedData.parsed_shifts[idx].person_id = parseInt(newPersonId);
+        const p = persons.find(x => x.id === parseInt(newPersonId));
+        if (p) ocrParsedData.parsed_shifts[idx].person_name = p.name;
+      }
     }
 
     async function confirmSaveOcrShifts() {

@@ -96,7 +96,7 @@ async def run_typhoon_ocr(image_base64_url: str) -> str:
         "presence_penalty": 0.2
     }
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=40.0) as client:
         response = await client.post(
             f"{TYPHOON_BASE_URL}/chat/completions",
             headers=headers,
@@ -110,11 +110,15 @@ async def parse_shifts_with_ai(
     ocr_text: str,
     target_names: List[str],
     target_year: int,
-    target_month: int
+    target_month: int,
+    target_person_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Use Typhoon Chat model to parse OCR text into structured JSON format
     """
+    if target_person_name and target_person_name not in target_names:
+        target_names = [target_person_name] + [n for n in target_names if n != target_person_name]
+
     if not TYPHOON_API_KEY:
         # Generate sample parsed data for test/demo mode
         import calendar
@@ -192,7 +196,7 @@ async def parse_shifts_with_ai(
         "max_tokens": 2048
     }
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{TYPHOON_BASE_URL}/chat/completions",
             headers=headers,

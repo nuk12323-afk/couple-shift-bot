@@ -393,19 +393,37 @@ def build_ocr_confirm_flex_message(parsed_data: Dict[str, Any]) -> FlexContainer
             "paddingAll": "14px",
             "contents": [
                 {
-                    "type": "button",
-                    "style": "primary",
-                    "color": "#059669",
-                    "height": "sm",
-                    "action": {
-                        "type": "message",
-                        "label": "✅ ยืนยันบันทึกเข้าปฏิทิน",
-                        "text": "ยืนยันบันทึกตารางเวร"
-                    }
+                    "type": "box",
+                    "layout": "horizontal",
+                    "spacing": "sm",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "style": "primary",
+                            "color": "#EC4899",
+                            "height": "sm",
+                            "action": {
+                                "type": "message",
+                                "label": "👩 บันทึกให้แฟน",
+                                "text": "ยืนยันบันทึกตารางเวรแฟน"
+                            }
+                        },
+                        {
+                            "type": "button",
+                            "style": "primary",
+                            "color": "#0284C7",
+                            "height": "sm",
+                            "action": {
+                                "type": "message",
+                                "label": "🧑 บันทึกให้ฉัน",
+                                "text": "ยืนยันบันทึกตารางเวรฉัน"
+                            }
+                        }
+                    ]
                 },
                 {
                     "type": "text",
-                    "text": "💡 หากมีจุดใดไม่ถูกต้อง สามารถพิมพ์บอกเพื่อให้แก้ไขได้เลยครับ",
+                    "text": "💡 เลือกได้เลยว่าตารางเวรนี้เป็นของแฟน หรือของฉันครับ",
                     "size": "xxs",
                     "color": "#94A3B8",
                     "align": "center",

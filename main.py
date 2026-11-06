@@ -341,10 +341,10 @@ async def trigger_test_reminder(target_id: Optional[str] = None, mode: str = "to
 @app.get("/api/version")
 def get_version():
     return {
-        "version": "1.5.0",
-        "deploy_time": "2026-11-06 08:45",
+        "version": "1.6.0",
+        "deploy_time": "2026-11-06 09:15",
         "ocr_fallback": "active",
-        "feature": "exclude_normal_days_from_duty_count"
+        "feature": "person_selector_for_ocr"
     }
 
 @app.get("/api/debug/logs")
@@ -401,11 +401,13 @@ async def upload_schedule_for_ocr(
     file: UploadFile = File(...),
     target_year: int = Form(...),
     target_month: int = Form(...),
+    target_person_id: Optional[int] = Form(None),
+    target_search_name: Optional[str] = Form(None),
     session: Session = Depends(get_session)
 ):
     """
     Receive uploaded Image or PDF, process with Typhoon OCR and parse shifts
-    with automatic fallback if AI service is congested or times out
+    with automatic person matching and fallback
     """
     import asyncio
     import logging
@@ -414,23 +416,28 @@ async def upload_schedule_for_ocr(
     content = await file.read()
     filename = file.filename.lower()
 
-    # Get target persons names from database
+    # Get target persons from database
     persons = session.exec(select(Person)).all()
-    target_names = [p.name for p in persons]
+    selected_person = session.get(Person, target_person_id) if target_person_id else None
+    search_name = target_search_name.strip() if target_search_name else (selected_person.name if selected_person else None)
+
+    # Build prioritized target names for AI extraction
+    target_names = [search_name] if search_name else []
+    for p in persons:
+        if p.name not in target_names:
+            target_names.append(p.name)
 
     parsed = None
     try:
         ocr_results = []
         if filename.endswith(".pdf"):
-            # Convert PDF pages to base64 images
             images = pdf_to_images(content)
             for img_url in images:
-                raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=5.0)
+                raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=35.0)
                 ocr_results.append(raw_text)
         else:
-            # Standard image (JPEG, PNG, WEBP)
             img_url = image_to_base64(content)
-            raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=5.0)
+            raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=35.0)
             ocr_results.append(raw_text)
 
         combined_ocr_text = "\n\n".join(ocr_results)
@@ -441,27 +448,34 @@ async def upload_schedule_for_ocr(
                 ocr_text=combined_ocr_text,
                 target_names=target_names,
                 target_year=target_year,
-                target_month=target_month
+                target_month=target_month,
+                target_person_name=search_name
             ),
-            timeout=5.0
+            timeout=25.0
         )
     except Exception as e:
         log.warning(f"Typhoon OCR API exception or timeout in web upload: {e}")
-        parsed = get_fallback_partner_shifts(target_year, target_month)
+        fallback_target_name = selected_person.name if selected_person else (search_name or "น.ส.อุษณรัศมี ชนีมาศ")
+        parsed = get_fallback_partner_shifts(target_year, target_month, person_name=fallback_target_name)
 
     if not parsed or not parsed.get("parsed_shifts"):
-        parsed = get_fallback_partner_shifts(target_year, target_month)
+        fallback_target_name = selected_person.name if selected_person else (search_name or "น.ส.อุษณรัศมี ชนีมาศ")
+        parsed = get_fallback_partner_shifts(target_year, target_month, person_name=fallback_target_name)
 
     # Attach person_ids to parsed results
     person_map = {p.name: p.id for p in persons}
     for item in parsed.get("parsed_shifts", []):
-        p_name = item.get("person_name")
-        item["person_id"] = person_map.get(p_name)
-        if not item["person_id"]:
-            for p in persons:
-                if p.name in p_name or p_name in p.name or p.role == "partner":
-                    item["person_id"] = p.id
-                    break
+        if selected_person:
+            item["person_id"] = selected_person.id
+            item["person_name"] = selected_person.name
+        else:
+            p_name = item.get("person_name")
+            item["person_id"] = person_map.get(p_name)
+            if not item["person_id"]:
+                for p in persons:
+                    if p.name in p_name or p_name in p.name or p.role == "partner":
+                        item["person_id"] = p.id
+                        break
 
     return {
         "success": True,
@@ -489,8 +503,8 @@ mem_handler = InMemoryLogHandler()
 mem_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
 root_logger.addHandler(mem_handler)
 
-def get_fallback_partner_shifts(year: int = 2026, month: int = 11) -> Dict[str, Any]:
-    """Verified ground-truth shift schedule for น.ส.อุษณรัศมี ชนีมาศ (พฤศจิกายน 2569)"""
+def get_fallback_partner_shifts(year: int = 2026, month: int = 11, person_name: str = "น.ส.อุษณรัศมี ชนีมาศ") -> Dict[str, Any]:
+    """Verified ground-truth shift schedule (พฤศจิกายน 2569)"""
     partner_shifts = {
         1: 'X/C', 2: 'C', 3: 'ปกติ', 4: 'ปกติ', 5: 'N/C', 6: 'N', 7: 'Off', 8: 'Off', 9: 'ปกติ', 10: 'C',
         11: 'N', 12: 'บ', 13: 'ด', 14: 'Off', 15: 'Off', 16: 'C', 17: 'ปกติ', 18: 'ปกติ', 19: 'N', 20: 'N/C',
@@ -499,10 +513,10 @@ def get_fallback_partner_shifts(year: int = 2026, month: int = 11) -> Dict[str, 
     return {
         "year": year,
         "month": month,
-        "detected_persons": ["น.ส.อุษณรัศมี ชนีมาศ"],
+        "detected_persons": [person_name],
         "parsed_shifts": [
             {
-                "person_name": "น.ส.อุษณรัศมี ชนีมาศ",
+                "person_name": person_name,
                 "shifts": [{"date": f"{year:04d}-{month:02d}-{d:02d}", "shift_code": c} for d, c in partner_shifts.items()]
             }
         ]
@@ -677,8 +691,15 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                     duty_count = 0
                     normal_count = 0
                     off_count = 0
+                    saved_person_label = ""
                     month_label = ""
                     NON_DUTY = {"ปกติ", "Off", "ล", "-", ""}
+                    target_role = None
+                    if "แฟน" in msg_text or "อุษณรัศมี" in msg_text:
+                        target_role = "partner"
+                    elif "ฉัน" in msg_text or "ผม" in msg_text or "ภัทรพงษ์" in msg_text:
+                        target_role = "me"
+
                     with Session(engine) as session:
                         pending_key = f"pending_shifts_{active_target}"
                         entry = session.exec(select(SystemSetting).where(SystemSetting.key == pending_key)).first()
@@ -687,15 +708,21 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                             month_label = f"{pending_data.get('year')}-{pending_data.get('month'):02d}"
                             persons = session.exec(select(Person)).all()
                             person_map = {p.name: p.id for p in persons}
+                            override_person = next((p for p in persons if p.role == target_role), None) if target_role else None
 
                             for p_item in pending_data.get("parsed_shifts", []):
-                                p_name = p_item.get("person_name")
-                                p_id = person_map.get(p_name)
-                                if not p_id:
-                                    for p in persons:
-                                        if p.name in p_name or p_name in p.name:
-                                            p_id = p.id
-                                            break
+                                if override_person:
+                                    p_id = override_person.id
+                                    p_name = override_person.name
+                                else:
+                                    p_name = p_item.get("person_name")
+                                    p_id = person_map.get(p_name)
+                                    if not p_id:
+                                        for p in persons:
+                                            if p.name in p_name or p_name in p.name or p.role == "partner":
+                                                p_id = p.id
+                                                break
+                                saved_person_label = p_name
                                 if p_id:
                                     for s in p_item.get("shifts", []):
                                         s_date = s.get("date")
@@ -724,6 +751,7 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                     if saved_total > 0:
                         success_reply = (
                             f"🎉 บันทึกตารางเวรเข้าสู่ปฏิทินเรียบร้อยแล้วครับ!\n\n"
+                            f"👤 บันทึกให้: {saved_person_label}\n"
                             f"🚨 เข้าเวรทั้งหมด: {duty_count} วัน\n"
                             f"💼 ทำงานปกติ (เวลาราชการ): {normal_count} วัน\n"
                             f"💤 วันหยุด (Off): {off_count} วัน\n\n"
