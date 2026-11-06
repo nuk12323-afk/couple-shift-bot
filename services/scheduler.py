@@ -1,8 +1,11 @@
+import os
 import asyncio
 import logging
+import httpx
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from sqlmodel import Session, select
 from config import TIMEZONE
 from database import engine
@@ -12,6 +15,15 @@ from services.line_service import send_daily_reminder
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
+
+async def keep_render_awake():
+    """Ping self external URL every 10 minutes so Render free tier stays awake for 06:00 and 20:00 alerts"""
+    url = os.getenv("RENDER_EXTERNAL_URL", "https://couple-shift-bot.onrender.com").rstrip("/") + "/api/settings"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.get(url)
+    except Exception:
+        pass
 
 def get_setting(key: str, default: str = "") -> str:
     with Session(engine) as session:
@@ -43,6 +55,8 @@ def setup_scheduler():
                 trigger=CronTrigger(hour=h_tom, minute=m_tom, timezone=pytz.timezone(TIMEZONE)),
                 id="job_tomorrow_reminder",
                 name=f"Tomorrow Shift Reminder at {notify_tomorrow_time}",
+                misfire_grace_time=3600,
+                coalesce=True,
                 replace_existing=True
             )
             logger.info(f"✅ Scheduled Tomorrow Reminder at {h_tom:02d}:{m_tom:02d} ({TIMEZONE})")
@@ -59,11 +73,22 @@ def setup_scheduler():
                 trigger=CronTrigger(hour=h_tod, minute=m_tod, timezone=pytz.timezone(TIMEZONE)),
                 id="job_today_reminder",
                 name=f"Today Shift Reminder at {notify_today_time}",
+                misfire_grace_time=3600,
+                coalesce=True,
                 replace_existing=True
             )
             logger.info(f"✅ Scheduled Today Reminder at {h_tod:02d}:{m_tod:02d} ({TIMEZONE})")
         except Exception as e:
             logger.error(f"Failed to schedule today reminder: {e}")
+
+    # Keep-alive job every 10 minutes to prevent cloud sleep before scheduled times
+    scheduler.add_job(
+        keep_render_awake,
+        trigger=IntervalTrigger(minutes=10),
+        id="job_keep_alive",
+        name="Keep Render Awake",
+        replace_existing=True
+    )
 
     if not scheduler.running:
         try:
