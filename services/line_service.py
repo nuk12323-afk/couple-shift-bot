@@ -323,6 +323,48 @@ def build_daily_flex_message(target_date: date, shifts_data: List[Dict], title_p
     }
     return FlexContainer.from_dict(flex_dict)
 
+def analyze_shifts_breakdown(codes_list: List[str]) -> Dict[str, Any]:
+    """Calculate duty days, total shift units (splitting X/C, N/C), N shifts, OT shifts, normal days, and off days"""
+    duty_days = 0
+    normal_days = 0
+    off_days = 0
+    leave_days = 0
+    n_shifts = 0
+    ot_shifts = 0
+    ot_unit_counts: Dict[str, int] = {}
+
+    for raw_code in codes_list:
+        code = (raw_code or "").strip()
+        if code == "ปกติ":
+            normal_days += 1
+        elif code == "Off":
+            off_days += 1
+        elif code == "ล":
+            leave_days += 1
+        elif code not in NON_DUTY_CODES:
+            duty_days += 1
+            parts = [p.strip() for p in code.split("/") if p.strip()]
+            for part in parts:
+                if part.upper() == "N":
+                    n_shifts += 1
+                else:
+                    ot_shifts += 1
+                    key = "X" if part.upper() == "X" else ("C" if part.upper() == "C" else part)
+                    ot_unit_counts[key] = ot_unit_counts.get(key, 0) + 1
+
+    total_shifts = n_shifts + ot_shifts
+    ot_breakdown_str = ", ".join([f"{k}×{v}" for k, v in ot_unit_counts.items()])
+    return {
+        "duty_days": duty_days,
+        "normal_days": normal_days,
+        "off_days": off_days,
+        "leave_days": leave_days,
+        "n_shifts": n_shifts,
+        "ot_shifts": ot_shifts,
+        "total_shifts": total_shifts,
+        "ot_breakdown_str": ot_breakdown_str
+    }
+
 def build_ocr_confirm_flex_message(parsed_data: Dict[str, Any]) -> FlexContainer:
     """
     Build interactive Flex Message asking user to confirm saving parsed shifts
@@ -339,28 +381,22 @@ def build_ocr_confirm_flex_message(parsed_data: Dict[str, Any]) -> FlexContainer
     for item in parsed_shifts:
         p_name = item.get("person_name", "ไม่ระบุ")
         shifts_list = item.get("shifts", [])
-        
-        duty_shifts = [s for s in shifts_list if s.get("shift_code") not in NON_DUTY_CODES]
-        normal_count = sum(1 for s in shifts_list if s.get("shift_code") == "ปกติ")
-        off_count = sum(1 for s in shifts_list if s.get("shift_code") == "Off")
-        leave_count = sum(1 for s in shifts_list if s.get("shift_code") == "ล")
+        codes = [s.get("shift_code", "") for s in shifts_list]
+        stats = analyze_shifts_breakdown(codes)
 
-        # Count duty shift breakdown
-        code_counts = {}
-        for s in duty_shifts:
-            c = s.get("shift_code", "-")
-            code_counts[c] = code_counts.get(c, 0) + 1
-
-        counts_str = ", ".join([f"{k}: {v} วัน" for k, v in code_counts.items()])
-        duty_text = f"🚨 เข้าเวรทั้งหมด {len(duty_shifts)} วัน ({counts_str})" if counts_str else f"🚨 เข้าเวรทั้งหมด {len(duty_shifts)} วัน"
+        ot_detail = f" ({stats['ot_breakdown_str']})" if stats["ot_breakdown_str"] else ""
+        duty_text = (
+            f"🚨 ขึ้นเวร {stats['duty_days']} วัน | 📋 รวมทั้งหมด {stats['total_shifts']} เวร\n"
+            f"⏰ N: {stats['n_shifts']} เวร | 🔥 OT: {stats['ot_shifts']} เวร{ot_detail}"
+        )
 
         other_parts = []
-        if normal_count > 0:
-            other_parts.append(f"💼 ทำงานปกติ {normal_count} วัน")
-        if off_count > 0:
-            other_parts.append(f"💤 หยุด {off_count} วัน")
-        if leave_count > 0:
-            other_parts.append(f"🌴 ลา {leave_count} วัน")
+        if stats["normal_days"] > 0:
+            other_parts.append(f"💼 ทำงานปกติ {stats['normal_days']} วัน")
+        if stats["off_days"] > 0:
+            other_parts.append(f"💤 หยุด {stats['off_days']} วัน")
+        if stats["leave_days"] > 0:
+            other_parts.append(f"🌴 ลา {stats['leave_days']} วัน")
         other_text = " | ".join(other_parts) if other_parts else "ไม่มีวันปกติ/วันหยุด"
 
         card = {
@@ -505,21 +541,19 @@ def build_roster_status_flex_message(month_str: str = "2026-11", notice_text: Op
                 select(Shift).where(Shift.person_id == p.id, Shift.shift_date.startswith(month_str))
             ).all()
 
-            duty_shifts = [s for s in shifts if s.shift_code not in NON_DUTY_CODES]
-            normal_shifts = [s for s in shifts if s.shift_code == "ปกติ"]
-            off_shifts = [s for s in shifts if s.shift_code == "Off"]
+            stats = analyze_shifts_breakdown([s.shift_code for s in shifts])
 
-            code_counts = {}
-            for s in duty_shifts:
-                code_counts[s.shift_code] = code_counts.get(s.shift_code, 0) + 1
-
-            if duty_shifts:
-                counts_str = ", ".join([f"{k}: {v} วัน" for k, v in list(code_counts.items())[:5]])
-                detail_text = f"เข้าเวร {len(duty_shifts)} วัน ({counts_str})\n💼 ทำงานปกติ {len(normal_shifts)} วัน | 💤 วันหยุด {len(off_shifts)} วัน"
+            if stats["duty_days"] > 0:
+                ot_detail = f" ({stats['ot_breakdown_str']})" if stats["ot_breakdown_str"] else ""
+                detail_text = (
+                    f"ขึ้นเวร {stats['duty_days']} วัน | รวมทั้งหมด {stats['total_shifts']} เวร\n"
+                    f"⏰ N: {stats['n_shifts']} เวร | 🔥 OT: {stats['ot_shifts']} เวร{ot_detail}\n"
+                    f"💼 ทำงานปกติ {stats['normal_days']} วัน | 💤 วันหยุด {stats['off_days']} วัน"
+                )
                 badge_color = "#0284C7"
-                status_label = f"🚨 เวร {len(duty_shifts)} วัน"
-            elif normal_shifts or off_shifts:
-                detail_text = f"ไม่มีเข้าเวร (ทำงานปกติ {len(normal_shifts)} วัน | วันหยุด {len(off_shifts)} วัน)"
+                status_label = f"📋 รวม {stats['total_shifts']} เวร ({stats['duty_days']} วัน)"
+            elif stats["normal_days"] > 0 or stats["off_days"] > 0:
+                detail_text = f"ไม่มีเข้าเวร (ทำงานปกติ {stats['normal_days']} วัน | วันหยุด {stats['off_days']} วัน)"
                 badge_color = "#64748B"
                 status_label = "💼 เวลาปกติ"
             else:
@@ -733,13 +767,17 @@ async def send_schedule_announcement(month_str: str, target_id: Optional[str] = 
         for p in persons:
             shifts = session.exec(select(Shift).where(Shift.person_id == p.id, Shift.shift_date.startswith(month_str))).all()
             person_shifts_map[p.id] = {s.shift_date: s.shift_code for s in shifts}
-            duty_count = sum(1 for s in shifts if s.shift_code not in NON_DUTY_CODES)
-            normal_count = sum(1 for s in shifts if s.shift_code == "ปกติ")
-            off_count = sum(1 for s in shifts if s.shift_code == "Off")
-            if duty_count > 0:
-                summary_rows.append(f"• {p.name}: เข้าเวร {duty_count} วัน (ปกติ {normal_count} วัน, หยุด {off_count} วัน)")
-            elif normal_count > 0 or off_count > 0:
-                summary_rows.append(f"• {p.name}: ทำงานปกติ {normal_count} วัน, หยุด {off_count} วัน (ไม่มีเวร)")
+            stats = analyze_shifts_breakdown([s.shift_code for s in shifts])
+            if stats["duty_days"] > 0:
+                ot_detail = f" ({stats['ot_breakdown_str']})" if stats["ot_breakdown_str"] else ""
+                summary_rows.append(
+                    f"• {p.name}:\n"
+                    f"  🚨 ขึ้นเวร {stats['duty_days']} วัน | 📋 รวมทั้งหมด {stats['total_shifts']} เวร\n"
+                    f"  ⏰ N: {stats['n_shifts']} เวร | 🔥 OT: {stats['ot_shifts']} เวร{ot_detail}\n"
+                    f"  💼 ปกติ {stats['normal_days']} วัน | 💤 หยุด {stats['off_days']} วัน"
+                )
+            elif stats["normal_days"] > 0 or stats["off_days"] > 0:
+                summary_rows.append(f"• {p.name}: ทำงานปกติ {stats['normal_days']} วัน, หยุด {stats['off_days']} วัน (ไม่มีเวร)")
             else:
                 summary_rows.append(f"• {p.name}: ยังไม่ระบุเวร")
 

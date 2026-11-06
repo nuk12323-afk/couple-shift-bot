@@ -610,6 +610,51 @@
       lucide.createIcons();
     }
 
+    function analyzeShiftsBreakdown(shiftsArray) {
+      const NON_DUTY = ["ปกติ", "Off", "ล", "-", ""];
+      let dutyDays = 0;
+      let normalDays = 0;
+      let offDays = 0;
+      let nShifts = 0;
+      let otShifts = 0;
+      const otUnitCounts = {};
+      const dayCodeCounts = {};
+
+      shiftsArray.forEach(s => {
+        const code = (s.shift_code || '').trim();
+        if (code === "ปกติ") {
+          normalDays++;
+        } else if (code === "Off") {
+          offDays++;
+        } else if (!NON_DUTY.includes(code)) {
+          dutyDays++;
+          dayCodeCounts[code] = (dayCodeCounts[code] || 0) + 1;
+          const parts = code.split('/').map(x => x.trim()).filter(Boolean);
+          parts.forEach(part => {
+            if (part.toUpperCase() === 'N') {
+              nShifts++;
+            } else {
+              otShifts++;
+              const k = part.toUpperCase() === 'X' ? 'X' : (part.toUpperCase() === 'C' ? 'C' : part);
+              otUnitCounts[k] = (otUnitCounts[k] || 0) + 1;
+            }
+          });
+        }
+      });
+
+      const totalShifts = nShifts + otShifts;
+      const otBreakdownStr = Object.entries(otUnitCounts).map(([c, n]) => `${c}×${n}`).join(', ');
+      return {
+        dutyDays,
+        normalDays,
+        offDays,
+        nShifts,
+        otShifts,
+        totalShifts,
+        otBreakdownStr
+      };
+    }
+
     function formatDateYMD(y, mZeroIndexed, d) {
       const dt = new Date(y, mZeroIndexed, d);
       return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
@@ -833,31 +878,32 @@
       const statsContainer = document.getElementById('monthPersonShiftStats');
       if (statsContainer) {
         statsContainer.innerHTML = '';
-        const NON_DUTY = ["ปกติ", "Off", "ล", "-", ""];
         const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
         
         persons.forEach(p => {
           const pShifts = shifts.filter(s => s.person_id === p.id && s.shift_date && s.shift_date.startsWith(monthPrefix));
-          const dutyShifts = pShifts.filter(s => !NON_DUTY.includes(s.shift_code));
-          const normalShifts = pShifts.filter(s => s.shift_code === "ปกติ");
-          const offShifts = pShifts.filter(s => s.shift_code === "Off");
-
-          const codeCounts = {};
-          dutyShifts.forEach(s => { codeCounts[s.shift_code] = (codeCounts[s.shift_code] || 0) + 1; });
-          const codeStr = Object.entries(codeCounts).map(([c, n]) => `${c}×${n}`).join(', ');
+          const stats = analyzeShiftsBreakdown(pShifts);
 
           const card = document.createElement('div');
-          card.className = "flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 shadow-xs gap-1";
+          card.className = "flex flex-col p-3 rounded-xl bg-white border border-slate-200 shadow-xs gap-2";
           
           card.innerHTML = `
-            <div class="flex items-center gap-2">
-              <span class="font-bold text-slate-800 text-xs">${p.role === 'me' ? '🧑' : '👩'} ${p.name}:</span>
-              <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 font-bold text-xs">🚨 เข้าเวร ${dutyShifts.length} วัน</span>
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
+              <span class="font-bold text-slate-800 text-xs">${p.role === 'me' ? '🧑' : '👩'} ${p.name}</span>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 font-bold text-xs">🚨 ขึ้นเวร ${stats.dutyDays} วัน</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-bold text-xs">📋 รวมทั้งหมด ${stats.totalShifts} เวร</span>
+              </div>
             </div>
-            <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-              ${codeStr ? `<span class="text-sky-600 font-medium">(${codeStr})</span>` : ''}
-              <span class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">💼 ปกติ ${normalShifts.length} วัน</span>
-              <span class="bg-emerald-50 px-1.5 py-0.5 rounded text-emerald-700">💤 หยุด ${offShifts.length} วัน</span>
+            <div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded font-bold text-emerald-800">⏰ N: ${stats.nShifts} เวร</span>
+                <span class="bg-amber-100 border border-amber-300 px-2 py-0.5 rounded font-bold text-amber-900">🔥 OT: ${stats.otShifts} เวร ${stats.otBreakdownStr ? `<span class="font-normal text-amber-800">(${stats.otBreakdownStr})</span>` : ''}</span>
+              </div>
+              <div class="flex flex-wrap items-center gap-1.5 text-slate-600">
+                <span class="bg-slate-100 px-1.5 py-0.5 rounded">💼 ปกติ ${stats.normalDays} วัน</span>
+                <span class="bg-green-50 border border-green-200 px-1.5 py-0.5 rounded text-green-700">💤 หยุด ${stats.offDays} วัน</span>
+              </div>
             </div>
           `;
           statsContainer.appendChild(card);
@@ -1063,9 +1109,7 @@
         const card = document.createElement('div');
         card.className = "p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5";
         
-        const dutyShifts = item.shifts.filter(s => !NON_DUTY.includes(s.shift_code));
-        const normalShifts = item.shifts.filter(s => s.shift_code === "ปกติ");
-        const offShifts = item.shifts.filter(s => s.shift_code === "Off");
+        const stats = analyzeShiftsBreakdown(item.shifts);
 
         let shiftsSummary = item.shifts.map((s, dIdx) => {
           const dNum = parseInt(s.date.split('-')[2]);
@@ -1126,16 +1170,25 @@
 
         card.innerHTML = `
           ${noticeHtml}
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-slate-200">
-            <div class="flex items-center gap-1.5">
-              <span class="font-bold text-slate-700 text-xs">บันทึกให้:</span>
-              <select id="ocrItemPersonSelect_${idx}" onchange="updateOcrItemPerson(${idx}, this.value)" class="text-xs font-semibold p-1 px-2 rounded-lg border border-slate-300 bg-white text-slate-800 shadow-2xs">
-                ${personOptionsHtml}
-              </select>
+          <div class="flex flex-col gap-2 pb-2 border-b border-slate-200">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                <span class="font-bold text-slate-700 text-xs">บันทึกให้:</span>
+                <select id="ocrItemPersonSelect_${idx}" onchange="updateOcrItemPerson(${idx}, this.value)" class="text-xs font-semibold p-1 px-2 rounded-lg border border-slate-300 bg-white text-slate-800 shadow-2xs">
+                  ${personOptionsHtml}
+                </select>
+              </div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-xs text-sky-800 font-bold bg-sky-100 px-2 py-0.5 rounded-lg border border-sky-200">🚨 ขึ้นเวร ${stats.dutyDays} วัน</span>
+                <span class="text-xs text-indigo-800 font-bold bg-indigo-100 px-2 py-0.5 rounded-lg border border-indigo-200">📋 รวมทั้งหมด ${stats.totalShifts} เวร</span>
+              </div>
             </div>
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="text-xs text-sky-700 font-bold bg-sky-100 px-2 py-0.5 rounded-lg border border-sky-200">🚨 เข้าเวร ${dutyShifts.length} วัน</span>
-              <span class="text-[11px] text-slate-500">💼 ปกติ ${normalShifts.length} | 💤 หยุด ${offShifts.length}</span>
+            <div class="flex items-center justify-between gap-1.5 flex-wrap text-[11px]">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold px-2 py-0.5 rounded">⏰ N: ${stats.nShifts} เวร</span>
+                <span class="bg-amber-100 border border-amber-300 text-amber-900 font-bold px-2 py-0.5 rounded">🔥 OT: ${stats.otShifts} เวร ${stats.otBreakdownStr ? `<span class="font-normal">(${stats.otBreakdownStr})</span>` : ''}</span>
+              </div>
+              <span class="text-slate-600 font-medium">💼 ปกติ ${stats.normalDays} วัน | 💤 หยุด ${stats.offDays} วัน</span>
             </div>
           </div>
 

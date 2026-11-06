@@ -958,13 +958,11 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
 
                 # Handle confirmation of pending OCR shifts
                 if "ยืนยันบันทึกตารางเวร" in msg_text or ("ยืนยัน" in msg_text and "เวร" in msg_text):
+                    from services.line_service import analyze_shifts_breakdown
                     saved_total = 0
-                    duty_count = 0
-                    normal_count = 0
-                    off_count = 0
+                    saved_codes = []
                     saved_person_label = ""
                     month_label = ""
-                    NON_DUTY = {"ปกติ", "Off", "ล", "-", ""}
                     target_role = None
                     if "แฟน" in msg_text or "อุษณรัศมี" in msg_text:
                         target_role = "partner"
@@ -999,13 +997,7 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                                         s_date = s.get("date")
                                         s_code = s.get("shift_code")
                                         if s_date and s_code:
-                                            if s_code not in NON_DUTY:
-                                                duty_count += 1
-                                            elif s_code == "ปกติ":
-                                                normal_count += 1
-                                            elif s_code == "Off":
-                                                off_count += 1
-
+                                            saved_codes.append(s_code)
                                             existing = session.exec(
                                                 select(Shift).where(Shift.person_id == p_id, Shift.shift_date == s_date)
                                             ).first()
@@ -1020,12 +1012,14 @@ async def line_webhook(request: Request, background_tasks: BackgroundTasks, x_li
                             session.commit()
 
                     if saved_total > 0:
+                        st_info = analyze_shifts_breakdown(saved_codes)
+                        ot_str = f" ({st_info['ot_breakdown_str']})" if st_info["ot_breakdown_str"] else ""
                         success_reply = (
                             f"🎉 บันทึกตารางเวรเข้าสู่ปฏิทินเรียบร้อยแล้วครับ!\n\n"
                             f"👤 บันทึกให้: {saved_person_label}\n"
-                            f"🚨 เข้าเวรทั้งหมด: {duty_count} วัน\n"
-                            f"💼 ทำงานปกติ (เวลาราชการ): {normal_count} วัน\n"
-                            f"💤 วันหยุด (Off): {off_count} วัน\n\n"
+                            f"🚨 ขึ้นเวร: {st_info['duty_days']} วัน | 📋 รวมทั้งหมด: {st_info['total_shifts']} เวร\n"
+                            f"⏰ เวร N: {st_info['n_shifts']} เวร | 🔥 เวร OT: {st_info['ot_shifts']} เวร{ot_str}\n"
+                            f"💼 ทำงานปกติ: {st_info['normal_days']} วัน | 💤 วันหยุด (Off): {st_info['off_days']} วัน\n\n"
                             f"⏰ ระบบจะคอยส่งแจ้งเตือนเวรของทั้งสองคนตามเวลาที่คุณตั้งไว้ครับ 💕"
                         )
                     else:
