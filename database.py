@@ -17,11 +17,13 @@ def init_db():
             session.add(p2)
             session.commit()
 
-        # Seed November 2026 shifts for partner if shifts table is empty
-        existing_shifts = session.exec(select(Shift)).first()
-        if not existing_shifts:
-            p2 = session.exec(select(Person).where(Person.role == "partner")).first()
-            if p2:
+        # Seed November 2026 shifts for partner and me if missing
+        p1 = session.exec(select(Person).where(Person.role == "me")).first()
+        p2 = session.exec(select(Person).where(Person.role == "partner")).first()
+
+        if p2:
+            p2_nov = session.exec(select(Shift).where(Shift.person_id == p2.id, Shift.shift_date.startswith("2026-11"))).first()
+            if not p2_nov:
                 shifts_map = {
                     1: 'X/C', 2: 'C', 3: 'ปกติ', 4: 'ปกติ', 5: 'N/C', 6: 'N', 7: 'Off', 8: 'Off', 9: 'ปกติ', 10: 'C',
                     11: 'N', 12: 'บ', 13: 'ด', 14: 'Off', 15: 'Off', 16: 'C', 17: 'ปกติ', 18: 'ปกติ', 19: 'N', 20: 'N/C',
@@ -29,6 +31,30 @@ def init_db():
                 }
                 for day, code in shifts_map.items():
                     session.add(Shift(person_id=p2.id, shift_date=f"2026-11-{day:02d}", shift_code=code))
+                session.commit()
+
+        if p1:
+            p1_nov_b = session.exec(
+                select(Shift).where(
+                    Shift.person_id == p1.id,
+                    Shift.shift_date.startswith("2026-11"),
+                    Shift.shift_code == "บ"
+                )
+            ).first()
+            if not p1_nov_b:
+                me_shifts_map = {
+                    1: 'บ', 2: 'ปกติ', 3: 'บ', 4: 'ปกติ', 5: 'ปกติ', 6: 'บ', 7: 'Off', 8: 'Off', 9: 'บ', 10: 'ปกติ',
+                    11: 'ปกติ', 12: 'ปกติ', 13: 'ปกติ', 14: 'Off', 15: 'Off', 16: 'บ', 17: 'ปกติ', 18: 'ปกติ', 19: 'ปกติ', 20: 'ปกติ',
+                    21: 'Off', 22: 'Off', 23: 'ปกติ', 24: 'บ', 25: 'ปกติ', 26: 'ปกติ', 27: 'ปกติ', 28: 'Off', 29: 'Off', 30: 'ปกติ'
+                }
+                for day, code in me_shifts_map.items():
+                    d_str = f"2026-11-{day:02d}"
+                    ex = session.exec(select(Shift).where(Shift.person_id == p1.id, Shift.shift_date == d_str)).first()
+                    if ex:
+                        ex.shift_code = code
+                        session.add(ex)
+                    else:
+                        session.add(Shift(person_id=p1.id, shift_date=d_str, shift_code=code))
                 session.commit()
 
         # 2. Initialize default shift types if empty
