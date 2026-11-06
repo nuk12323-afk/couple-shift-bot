@@ -52,6 +52,25 @@ from linebot.v3.webhooks import (
     FileMessageContent
 )
 
+import logging
+from collections import deque
+
+# In-memory debug logger for inspecting runtime
+debug_logs = deque(maxlen=200)
+
+class InMemoryLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            debug_logs.append(msg)
+        except Exception:
+            pass
+
+root_logger = logging.getLogger()
+mem_handler = InMemoryLogHandler()
+mem_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
+root_logger.addHandler(mem_handler)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: initialize database and scheduler
@@ -367,14 +386,14 @@ async def trigger_test_reminder(target_id: Optional[str] = None, mode: str = "to
 @app.get("/api/version")
 def get_version():
     return {
-        "version": "1.7.0",
-        "deploy_time": "2026-11-06 13:55",
+        "version": "1.7.1",
+        "deploy_time": "2026-11-06 14:40",
         "ocr_fallback": "active",
         "features": [
-            "mismatch_protection_me_vs_partner",
-            "safe_bulk_clear_shifts_post_delete",
-            "typhoon_ocr_payload_fix",
-            "one_click_standard_office_fill"
+            "interactive_ocr_preview_shift_cycling",
+            "quick_afternoon_shift_fill",
+            "portrait_mode_ocr_fix",
+            "extended_typhoon_timeout_90s"
         ]
     }
 
@@ -543,11 +562,11 @@ async def upload_schedule_for_ocr(
             if filename.endswith(".pdf"):
                 images = pdf_to_images(content)
                 for img_url in images:
-                    raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=45.0)
+                    raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=90.0)
                     ocr_results.append(raw_text)
             else:
                 img_url = image_to_base64(content)
-                raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=45.0)
+                raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=90.0)
                 ocr_results.append(raw_text)
 
             combined_ocr_text = "\n\n".join(ocr_results)
@@ -560,20 +579,29 @@ async def upload_schedule_for_ocr(
                     target_month=target_month,
                     target_person_name=search_name
                 ),
-                timeout=30.0
+                timeout=60.0
             )
         except Exception as e:
             ocr_error_msg = str(e)
             log.warning(f"Typhoon OCR API exception in web upload: {e}")
 
         # If OCR returned empty or failed: safe fallback depending on who was selected
+        is_fallback = False
         if not parsed or not parsed.get("parsed_shifts"):
+            is_fallback = True
             if selected_person and selected_person.role == "me":
-                # For 'me' (civil service / regular office hours), standard schedule is Mon-Fri ปกติ, Sat-Sun Off
+                # For 'me', standard schedule is Mon-Fri ปกติ, Sat-Sun Off
                 parsed = get_standard_office_shifts(target_year, target_month, me_person.name)
             else:
                 # For 'partner' (hospital duty roster), verified shifts
                 parsed = get_fallback_partner_shifts(target_year, target_month, partner_person.name)
+
+        parsed["is_fallback"] = is_fallback
+        if is_fallback and ocr_error_msg:
+            parsed["ocr_warning"] = (
+                "⚠️ ระบบ AI ไม่สามารถอ่านตัวอักษรเวรจากภาพนี้ได้อัตโนมัติ (อาจเกิดจากแสง ความคมชัด หรือการประมวลผลนานเกินกำหนด) "
+                "ระบบจึงใส่ค่าเริ่มต้นให้ คุณสามารถคลิกที่แต่ละวันเพื่อระบุ 'เวรบ่าย (บ)' หรือแก้ไขเวรได้ทันทีครับ"
+            )
 
         # Process and link each parsed item to the actual person detected in document
         parsed_items = parsed.get("parsed_shifts", [])

@@ -13,24 +13,18 @@ from config import (
     TYPHOON_CHAT_MODEL
 )
 
-def image_to_base64(image_bytes: bytes, max_size=(1280, 1280)) -> str:
-    """Correct orientation, resize image if too large and convert to base64 data URL"""
+def image_to_base64(image_bytes: bytes, max_size=(1100, 1100)) -> str:
+    """Correct orientation from EXIF, optimize image size and convert to base64 data URL"""
     img = Image.open(io.BytesIO(image_bytes))
     
-    # 1. Correct EXIF rotation from mobile cameras
+    # Correct EXIF rotation from mobile cameras accurately
     img = ImageOps.exif_transpose(img)
-    
-    # 2. Check if a landscape table was captured vertically (height > width)
-    # Hospital duty rosters are landscape format
-    if img.height > img.width * 1.15:
-        # Rotate 90 degrees clockwise to make it landscape
-        img = img.rotate(270, expand=True)
 
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
     img.thumbnail(max_size, Image.Resampling.LANCZOS)
     buffered = io.BytesIO()
-    img.save(buffered, format="JPEG", quality=82)
+    img.save(buffered, format="JPEG", quality=76)
     encoded = base64.b64encode(buffered.getvalue()).decode("utf-8")
     return f"data:image/jpeg;base64,{encoded}"
 
@@ -94,7 +88,7 @@ async def run_typhoon_ocr(image_base64_url: str) -> str:
         "max_tokens": 3000
     }
 
-    async with httpx.AsyncClient(timeout=40.0) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=20.0)) as client:
         response = await client.post(
             f"{TYPHOON_BASE_URL}/chat/completions",
             headers=headers,
@@ -145,10 +139,12 @@ async def parse_shifts_with_ai(
         "Content-Type": "application/json"
     }
 
+    target_focus = f"โดยเฉพาะบุคคลที่เลือก: {target_person_name}" if target_person_name else ""
     target_list_str = "\n".join([f"- {name}" for name in target_names])
-    prompt = f"""คุณคือผู้เชี่ยวชาญด้านการสกัดข้อมูลตารางเวร (Shift Roster Parser) สำหรับโรงพยาบาล/หน่วยงานไทย
-จากข้อความตารางเวรที่ได้จาก OCR ด้านล่างนี้ ให้ค้นหาและสกัดตารางเวรเฉพาะบุคคลที่มีชื่อปรากฏจริงในเอกสาร จากรายชื่อเป้าหมายต่อไปนี้:
+    prompt = f"""คุณคือผู้เชี่ยวชาญด้านการสกัดข้อมูลตารางเวร (Shift Roster Parser) สำหรับโรงพยาบาลและหน่วยงานไทย
+จากข้อความตารางเวรที่ได้จาก OCR ด้านล่างนี้ ให้ค้นหาและสกัดตารางเวรสำหรับบุคคลต่อไปนี้:
 {target_list_str}
+{target_focus}
 สำหรับเดือน: {target_month:02d}/{target_year:04d}
 
 ข้อความ OCR:
@@ -156,32 +152,34 @@ async def parse_shifts_with_ai(
 {ocr_text}
 ---
 
-ข้อกำหนดและกฎสำคัญมาก:
-1. หากบุคคลใด "ไม่มีชื่อปรากฏในข้อความ OCR เลย" (เช่น เป็นใบตารางเวรของคนละหน่วยงาน) ห้ามสร้างเวรขึ้นมาเองเด็ดขาด และห้ามใส่บุคคลนั้นใน parsed_shifts
-2. สกัดเวรเฉพาะบุคคลที่มีชื่อ-นามสกุล หรือชื่อเล่น ตรงหรือใกล้เคียงกับในข้อความ OCR เท่านั้น
-3. สัญลักษณ์เวรของโรงพยาบาล:
-   - 'X/C' หรือ 'x/c' -> "X/C" (เวรเช้าวันหยุด + ขอเลือด)
-   - 'N/C' หรือ 'n/c' -> "N/C" (เวรเข้า 7 โมงเช้า + ขอเลือด)
-   - 'x' หรือ 'X' -> "x" (เวรเช้าวันหยุด 08:00 - 16:00)
-   - 'C' หรือ 'c' -> "C" (เวรขอเลือด ถึงเที่ยงคืน)
-   - 'N' หรือ 'n' -> "N" (เวรเข้า 7 โมงเช้า 07:00 - 15:00)
-   - 'ช' -> "ช" (เวรเช้า 08:00 - 16:00)
-   - 'บ' -> "บ" (เวรบ่าย 16:00 - 00:00)
-   - 'ด' -> "ด" (เวรดึก เที่ยงคืน 00:00 - 08:00)
-   - 'Off' หรือ '-' หรือเวรว่างในวันเสาร์-อาทิตย์ -> "Off" (วันหยุด)
-   - ช่องว่างในวันจันทร์-ศุกร์ (ไม่ขึ้นเวรพิเศษ) -> "ปกติ" (08:00 - 16:00)
-   - 'ล' -> "ล" (วันลา)
+ข้อกำหนดและกฎการสกัดเวร (สำคัญมาก):
+1. การระบุตัวบุคคล:
+   - ค้นหาแถวของ {target_names[0] if target_names else 'บุคคลเป้าหมาย'} (อาจปรากฏเป็นชื่อเต็ม, ชื่อตัดคำนำหน้า เช่น 'ภัทรพงษ์', 'อุษณรัศมี', นามสกุล หรือชื่อย่อ)
+   - หากในเอกสารมีตารางเวรเพียงคนเดียว ให้ถือว่าเป็นตารางเวรของบุคคลที่เลือก ({target_names[0] if target_names else ''})
+2. การแปลงรหัสเวร:
+   - เวรบ่าย: ตัวอักษร 'บ', 'บ.', คำว่า 'บ่าย', 'เวรบ่าย', 'ช่วงบ่าย', หรือช่วงเวลา 16.00-24.00 น., 16.00-20.00 น., 16:00 -> แปลงเป็นรหัส "บ" (เวรบ่าย)
+   - เวรเช้า: ตัวอักษร 'ช', 'ช.', คำว่า 'เช้า', 'เวรเช้า', หรือช่วงเวลา 08.00-16.00 น. -> แปลงเป็นรหัส "ช" (เวรเช้า)
+   - เวรดึก: ตัวอักษร 'ด', 'ด.', คำว่า 'ดึก', 'เวรดึก', หรือช่วงเวลา 00.00-08.00 น., 24.00-08.00 น. -> แปลงเป็นรหัส "ด" (เวรดึก)
+   - เวรเช้าวันหยุด: 'x', 'X' -> แปลงเป็น "x"
+   - เวรขอเลือด: 'C', 'c' -> แปลงเป็น "C"
+   - เวรเข้า 7 โมงเช้า: 'N', 'n' -> แปลงเป็น "N"
+   - เวรควบ: 'X/C' หรือ 'x/c' -> "X/C", 'N/C' หรือ 'n/c' -> "N/C"
+   - วันหยุด: ตัวอักษร 'Off', 'off', 'หยุด', ขีด '-' หรือช่องว่างในวันเสาร์-อาทิตย์ -> "Off"
+   - ทำงานปกติ: ช่องว่างในวันจันทร์-ศุกร์ (ที่ไม่ได้ขึ้นเวรบ่าย เวรดึก หรือเวรพิเศษ) -> "ปกติ"
+   - วันลา: 'ล' -> "ล"
+3. สกัดข้อมูลให้ครบทุกวันของเดือน (วันที่ 1 ถึงสิ้นเดือน)
 
-กรุณาตอบเป็น JSON รูปแบบนี้เท่านั้น (ห้ามใส่คำอธิบายอื่นนอกเหนือจาก JSON):
+กรุณาตอบเป็น JSON รูปแบบนี้เท่านั้น (ห้ามใส่ markdown ```json หรือคำอธิบายอื่น):
 {{
   "year": {target_year},
   "month": {target_month},
-  "detected_persons": ["รายชื่อเฉพาะคนที่พบจริงในเอกสาร OCR"],
+  "detected_persons": ["รายชื่อคนที่พบในเอกสาร OCR"],
   "parsed_shifts": [
     {{
-      "person_name": "ชื่อ-สกุลตรงตามที่พบในเอกสาร",
+      "person_name": "ชื่อบุคคล",
       "shifts": [
-        {{ "date": "{target_year:04d}-{target_month:02d}-01", "shift_code": "..." }}
+        {{ "date": "{target_year:04d}-{target_month:02d}-01", "shift_code": "..." }},
+        {{ "date": "{target_year:04d}-{target_month:02d}-02", "shift_code": "..." }}
       ]
     }}
   ]
@@ -195,10 +193,10 @@ async def parse_shifts_with_ai(
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.1,
-        "max_tokens": 2048
+        "max_tokens": 2500
     }
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=20.0)) as client:
         response = await client.post(
             f"{TYPHOON_BASE_URL}/chat/completions",
             headers=headers,

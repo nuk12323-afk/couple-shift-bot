@@ -877,19 +877,44 @@
       }
 
       const NON_DUTY = ["ปกติ", "Off", "ล", "-", ""];
+      
+      const warningHtml = data.ocr_warning ? `
+        <div class="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
+          <span class="text-base shrink-0">⚠️</span>
+          <div>
+            <p class="font-bold text-amber-900">${data.ocr_warning}</p>
+            <p class="text-amber-700 mt-1">คุณสามารถคลิกที่แต่ละวันด้านล่าง หรือใช้ปุ่มด่วน <b>"⚡ เติมเวรบ่าย (บ)"</b> เพื่อระบุเวรได้ทันทีครับ</p>
+          </div>
+        </div>
+      ` : '';
+
+      container.innerHTML = warningHtml;
+
       data.parsed_shifts.forEach((item, idx) => {
         const card = document.createElement('div');
-        card.className = "p-3 bg-slate-50 rounded-xl border border-slate-200";
+        card.className = "p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5";
         
         const dutyShifts = item.shifts.filter(s => !NON_DUTY.includes(s.shift_code));
         const normalShifts = item.shifts.filter(s => s.shift_code === "ปกติ");
         const offShifts = item.shifts.filter(s => s.shift_code === "Off");
 
-        let shiftsSummary = item.shifts.map(s => {
+        let shiftsSummary = item.shifts.map((s, dIdx) => {
           const dNum = parseInt(s.date.split('-')[2]);
           const isDuty = !NON_DUTY.includes(s.shift_code);
-          const badgeClass = isDuty ? "bg-sky-50 border-sky-200 text-sky-800" : "bg-white border-slate-200 text-slate-600";
-          return `<span class="inline-block px-1.5 py-0.5 m-0.5 rounded border text-[10px] font-medium ${badgeClass}">${dNum}: <b>${s.shift_code}</b></span>`;
+          const isAfternoon = (s.shift_code === "บ");
+          let badgeClass = "bg-white border-slate-200 text-slate-600 hover:border-slate-400";
+          if (isAfternoon) {
+            badgeClass = "bg-amber-100 border-amber-300 text-amber-900 font-bold hover:bg-amber-200";
+          } else if (isDuty) {
+            badgeClass = "bg-sky-100 border-sky-300 text-sky-900 font-bold hover:bg-sky-200";
+          } else if (s.shift_code === "Off") {
+            badgeClass = "bg-emerald-50 border-emerald-200 text-emerald-700 font-medium";
+          }
+          return `
+            <button type="button" onclick="cycleShiftCode(${idx}, ${dIdx})" class="inline-flex items-center px-1.5 py-0.5 m-0.5 rounded border text-[11px] font-medium transition cursor-pointer hover:scale-105 shadow-2xs ${badgeClass}" title="คลิกเพื่อเปลี่ยนเวรวันนี้ (บ ➡️ ช ➡️ ด ➡️ Off ➡️ ปกติ)">
+              <span class="opacity-75">${dNum}:</span> <b class="ml-1">${s.shift_code}</b>
+            </button>
+          `;
         }).join('');
 
         const personOptionsHtml = persons.map(p => {
@@ -900,14 +925,14 @@
         }).join('');
 
         const noticeHtml = item.notice ? `
-          <div class="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+          <div class="mb-2 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
             <div class="flex items-start gap-2">
-              <span class="text-base">⚠️</span>
+              <span class="text-base shrink-0">⚠️</span>
               <div>
-                <p class="font-bold text-amber-900">ตรวจพบตารางเวรของแฟน (ไม่พบชื่อคุณในเอกสารโรงพยาบาลนี้)</p>
-                <p class="text-amber-700 mt-1">${item.notice.replace(/\n/g, '<br>')}</p>
-                <div class="mt-2.5">
-                  <button type="button" onclick="presetStandardOfficeMonth()" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-semibold shadow-xs transition">
+                <p class="font-bold text-rose-900">ตรวจพบตารางเวรของแฟน (ไม่พบชื่อคุณในเอกสารโรงพยาบาลนี้)</p>
+                <p class="text-rose-700 mt-0.5">${item.notice.replace(/\n/g, '<br>')}</p>
+                <div class="mt-2">
+                  <button type="button" onclick="presetStandardOfficeMonth()" class="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-rose-100 text-rose-900 border border-rose-300 rounded-lg text-xs font-semibold shadow-xs transition">
                     💼 กดเพื่อลงเวลาทำงานปกติทั้งเดือนให้ฉัน (จ-ศ ปกติ, ส-อา หยุด)
                   </button>
                 </div>
@@ -918,24 +943,94 @@
 
         card.innerHTML = `
           ${noticeHtml}
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-1.5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-slate-200">
             <div class="flex items-center gap-1.5">
               <span class="font-bold text-slate-700 text-xs">บันทึกให้:</span>
               <select id="ocrItemPersonSelect_${idx}" onchange="updateOcrItemPerson(${idx}, this.value)" class="text-xs font-semibold p-1 px-2 rounded-lg border border-slate-300 bg-white text-slate-800 shadow-2xs">
                 ${personOptionsHtml}
               </select>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5 flex-wrap">
               <span class="text-xs text-sky-700 font-bold bg-sky-100 px-2 py-0.5 rounded-lg border border-sky-200">🚨 เข้าเวร ${dutyShifts.length} วัน</span>
-              <span class="text-[11px] text-slate-500">💼 ปกติ ${normalShifts.length} วัน | 💤 หยุด ${offShifts.length} วัน</span>
+              <span class="text-[11px] text-slate-500">💼 ปกติ ${normalShifts.length} | 💤 หยุด ${offShifts.length}</span>
             </div>
           </div>
-          <div class="flex flex-wrap">${shiftsSummary}</div>
+
+          <!-- Quick edit tools -->
+          <div class="flex items-center justify-between gap-1 flex-wrap text-xs bg-white p-2 rounded-lg border border-slate-200">
+            <span class="text-[11px] font-medium text-slate-600">💡 คลิกที่แต่ละวันเพื่อเปลี่ยนเวร หรือกดปุ่มด่วน:</span>
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="quickFillShiftCode(${idx}, 'บ')" class="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded font-semibold text-[11px] shadow-2xs transition">
+                ⚡ เติมเวรบ่าย (บ)
+              </button>
+              <button type="button" onclick="quickFillShiftCode(${idx}, 'ช')" class="px-2 py-0.5 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 rounded font-semibold text-[11px] shadow-2xs transition">
+                ⚡ เติมเวรเช้า (ช)
+              </button>
+              <button type="button" onclick="quickFillShiftCode(${idx}, 'Off')" class="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded font-semibold text-[11px] shadow-2xs transition">
+                ⚡ เติมวันหยุด (Off)
+              </button>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap p-1 bg-white rounded-lg border border-slate-200">${shiftsSummary}</div>
         `;
         container.appendChild(card);
       });
 
       document.getElementById('ocrPreviewContainer').classList.remove('hidden');
+    }
+
+    const SHIFT_CYCLE = ["บ", "ช", "ด", "Off", "ปกติ", "x", "C", "N"];
+
+    function cycleShiftCode(itemIdx, dayIdx) {
+      if (!ocrParsedData || !ocrParsedData.parsed_shifts || !ocrParsedData.parsed_shifts[itemIdx]) return;
+      const shifts = ocrParsedData.parsed_shifts[itemIdx].shifts;
+      if (!shifts || !shifts[dayIdx]) return;
+
+      const currentCode = shifts[dayIdx].shift_code;
+      const curPos = SHIFT_CYCLE.indexOf(currentCode);
+      const nextCode = (curPos !== -1 && curPos < SHIFT_CYCLE.length - 1) ? SHIFT_CYCLE[curPos + 1] : SHIFT_CYCLE[0];
+      shifts[dayIdx].shift_code = nextCode;
+
+      renderOcrPreview(ocrParsedData, persons);
+    }
+
+    function quickFillShiftCode(itemIdx, codeToSet) {
+      if (!ocrParsedData || !ocrParsedData.parsed_shifts || !ocrParsedData.parsed_shifts[itemIdx]) return;
+      const promptText = `ระบุวันที่ที่ต้องการเปลี่ยนเป็นเวร "${codeToSet}" (คั่นด้วยจุลภาค เช่น 2, 4, 12, 16 หรือระบุ 1-5):`;
+      const input = prompt(promptText);
+      if (!input) return;
+
+      const shifts = ocrParsedData.parsed_shifts[itemIdx].shifts;
+      const parts = input.split(',').map(s => s.trim());
+      const targetDays = new Set();
+
+      parts.forEach(p => {
+        if (p.includes('-')) {
+          const [start, end] = p.split('-').map(x => parseInt(x.trim()));
+          if (!isNaN(start) && !isNaN(end)) {
+            for (let d = Math.min(start, end); d <= Math.max(start, end); d++) {
+              targetDays.add(d);
+            }
+          }
+        } else {
+          const d = parseInt(p);
+          if (!isNaN(d)) targetDays.add(d);
+        }
+      });
+
+      let changedCount = 0;
+      shifts.forEach(s => {
+        const dNum = parseInt(s.date.split('-')[2]);
+        if (targetDays.has(dNum)) {
+          s.shift_code = codeToSet;
+          changedCount++;
+        }
+      });
+
+      alert(`✅ เปลี่ยนวันที่ระบุเป็นเวร "${codeToSet}" เรียบร้อยแล้ว (${changedCount} วัน)`);
+      renderOcrPreview(ocrParsedData, persons);
+    }
     }
 
     function updateOcrItemPerson(idx, newPersonId) {
