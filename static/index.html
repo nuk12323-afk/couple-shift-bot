@@ -972,7 +972,7 @@
           shifts = await fetch(`/api/shifts?month=${getMonthQuery(currentDate)}`).then(r => r.json());
           renderAll();
         } else {
-          alert('เกิดข้อผิดพลาดในการลบตารางเวร');
+          alert('เกิดข้อผิดพลาดในการลบตารางเวร: ' + (res.detail || JSON.stringify(res)));
         }
       } catch (e) {
         console.error(e);

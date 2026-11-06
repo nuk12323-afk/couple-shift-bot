@@ -200,14 +200,29 @@ async def save_batch_shifts(data: BatchShiftSave, session: Session = Depends(get
 
     return {"success": True, "saved_count": saved_count}
 
-@app.delete("/api/shifts/{shift_id}")
-def delete_shift(shift_id: int, session: Session = Depends(get_session)):
-    shift = session.get(Shift, shift_id)
-    if not shift:
-        raise HTTPException(status_code=404, detail="Shift not found")
-    session.delete(shift)
+@app.delete("/api/shifts/clear")
+def clear_shifts(
+    month: Optional[str] = Query(None, description="Month in YYYY-MM format"),
+    person_id: Optional[int] = Query(None, description="Person ID (optional)"),
+    all_shifts: bool = Query(False, description="Clear all shifts in DB"),
+    session: Session = Depends(get_session)
+):
+    """Bulk delete shifts by month, person, or all"""
+    query = select(Shift)
+    if not all_shifts:
+        if month:
+            query = query.where(Shift.shift_date.startswith(month))
+        if person_id:
+            query = query.where(Shift.person_id == person_id)
+        if not month and not person_id:
+            raise HTTPException(status_code=400, detail="Must specify month, person_id, or all_shifts=true")
+    
+    shifts_to_delete = session.exec(query).all()
+    count = len(shifts_to_delete)
+    for s in shifts_to_delete:
+        session.delete(s)
     session.commit()
-    return {"success": True}
+    return {"success": True, "deleted_count": count}
 
 @app.post("/api/shifts/batch-fill")
 def batch_fill_shifts(data: BatchFillRequest, session: Session = Depends(get_session)):
@@ -248,29 +263,14 @@ def batch_fill_shifts(data: BatchFillRequest, session: Session = Depends(get_ses
     session.commit()
     return {"success": True, "filled_count": filled_count}
 
-@app.delete("/api/shifts/clear")
-def clear_shifts(
-    month: Optional[str] = Query(None, description="Month in YYYY-MM format"),
-    person_id: Optional[int] = Query(None, description="Person ID (optional)"),
-    all_shifts: bool = Query(False, description="Clear all shifts in DB"),
-    session: Session = Depends(get_session)
-):
-    """Bulk delete shifts by month, person, or all"""
-    query = select(Shift)
-    if not all_shifts:
-        if month:
-            query = query.where(Shift.shift_date.startswith(month))
-        if person_id:
-            query = query.where(Shift.person_id == person_id)
-        if not month and not person_id:
-            raise HTTPException(status_code=400, detail="Must specify month, person_id, or all_shifts=true")
-    
-    shifts_to_delete = session.exec(query).all()
-    count = len(shifts_to_delete)
-    for s in shifts_to_delete:
-        session.delete(s)
+@app.delete("/api/shifts/{shift_id}")
+def delete_shift(shift_id: int, session: Session = Depends(get_session)):
+    shift = session.get(Shift, shift_id)
+    if not shift:
+        raise HTTPException(status_code=404, detail="Shift not found")
+    session.delete(shift)
     session.commit()
-    return {"success": True, "deleted_count": count}
+    return {"success": True}
 
 # ----------------- Persons API -----------------
 @app.get("/api/persons")
