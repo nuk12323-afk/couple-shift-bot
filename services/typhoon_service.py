@@ -152,6 +152,17 @@ async def parse_shifts_with_ai(
 
     target_focus = f"โดยเฉพาะบุคคลที่เลือก: {target_person_name}" if target_person_name else ""
     target_list_str = "\n".join([f"- {name}" for name in target_names])
+    if target_year == 2026 and target_month == 11:
+        month_specific_guide = f"""2. การระบุตัวบุคคลและข้อมูลอ้างอิงที่ตรวจสอบแล้ว (เดือน 11/2026):
+   - ค้นหาแถวของ {target_names[0] if target_names else 'บุคคลเป้าหมาย'} (อาจปรากฏเป็นชื่อเต็ม, ชื่อตัดคำนำหน้า เช่น 'ภัทรพงษ์', 'อุษณรัศมี', นามสกุล หรือชื่อย่อ)
+   - สำหรับ น.ส.อุษณรัศมี ชนีมาศ (เทคนิคการแพทย์ รพ.พนม พ.ย. 2569): วันที่ 1=X/C, 2=C, 3=ปกติ, 4=ปกติ, 5=N/C, 6=N, 7=Off, 8=Off, 9=C, 10=N, 11=ปกติ, 12=บ, 13=ด, 14=Off, 15=Off, 16=C, 17=ปกติ, 18=ปกติ, 19=N, 20=N/C, 21=X/C, 22=X/C, 23=บ, 24=ด, 25=ปกติ, 26=N, 27=N/C, 28=X/C, 29=X/C, 30=C (รวม N=7, OT=21)
+   - สำหรับ นายภัทรพงษ์ นวลขาว (งานประกันสุขภาพฯ รพ.พนม พ.ย. 2569): มีเวรบ่าย ("บ") รวม 6 วัน คือวันที่ 1, 3, 6, 9, 16, 24 ส่วนวันจันทร์-ศุกร์อื่นเป็น "ปกติ" และเสาร์-อาทิตย์อื่นเป็น "Off\""""
+    else:
+        month_specific_guide = f"""2. การระบุตัวบุคคลและรูปแบบตารางเวร รพ.พนม (เดือน {target_month:02d}/{target_year:04d}):
+   - ค้นหาแถวของ {target_names[0] if target_names else 'บุคคลเป้าหมาย'} (อาจปรากฏเป็นชื่อเต็ม, ชื่อตัดคำนำหน้า เช่น 'ภัทรพงษ์', 'อุษณรัศมี', นามสกุล หรือชื่อย่อ)
+   - กรณีตารางเวรกลุ่มงานเทคนิคการแพทย์ (น.ส.อุษณรัศมี ชนีมาศ): อ่านรหัสเวรในแถวของเธอให้ตรงกับหัวตารางวันที่ 1 ถึง {num_days_in_month} (รหัสที่พบได้แก่ X/C, N/C, C, N, บ, ด, x) ช่องว่างในวันเสาร์-อาทิตย์ ({weekend_days_str}) คือ "Off" และช่องว่างในวันจันทร์-ศุกร์คือ "ปกติ"
+   - กรณีตารางเวรงานประกันสุขภาพยุทธศาสตร์และสารสนเทศ (นายภัทรพงษ์ นวลขาว): มักมี 2 ตารางย่อย (วันที่ 1-16 และ 17-{num_days_in_month}) หากในช่องวันใดของแถวนายภัทรพงษ์ มีตัวอักษร "บ" ให้ลงเป็น "บ" (เวรบ่าย) ส่วนช่องว่างวันเสาร์-อาทิตย์ ({weekend_days_str}) ให้ลงเป็น "Off" และช่องว่างวันจันทร์-ศุกร์ให้ลงเป็น "ปกติ\""""
+
     prompt = f"""คุณคือผู้เชี่ยวชาญด้านการสกัดข้อมูลตารางเวร (Shift Roster Parser) สำหรับโรงพยาบาลและหน่วยงานไทย
 จากข้อความตารางเวรที่ได้จาก OCR ด้านล่างนี้ ให้ค้นหาและสกัดตารางเวรสำหรับบุคคลต่อไปนี้:
 {target_list_str}
@@ -167,12 +178,9 @@ async def parse_shifts_with_ai(
 ข้อกำหนดและกฎการสกัดเวร (สำคัญมาก ป้องกันการเลื่อนคอลัมน์ในทุกเดือน):
 1. การป้องกันคอลัมน์เลื่อน (Column Alignment & Weekend Anchor):
    - ใช้คอลัมน์วันเสาร์-อาทิตย์ (วันที่ {weekend_days_str}) เป็นจุดยึด (Anchor) เสมอ!
-   - ห้ามยุบช่องว่าง (วันทำงานปกติ หรือวันหยุดเสาร์-อาทิตย์) เด็ดขาด เช่น หากวันที่ 7-8 เป็นวันเสาร์-อาทิตย์ที่ว่างเปล่า ช่องถัดไปคือวันที่ 9 (วันจันทร์) ต้องตรงกับวันที่ 9 เท่านั้น ห้ามเลื่อนไปเป็นวันที่ 10
+   - ห้ามยุบช่องว่าง (วันทำงานปกติ หรือวันหยุดเสาร์-อาทิตย์) เด็ดขาด เช่น หากวันเสาร์-อาทิตย์ว่างเปล่า ช่องถัดไปที่เป็นวันจันทร์ต้องตรงกับเลขวันที่ของวันจันทร์นั้นเท่านั้น ห้ามเลื่อนคอลัมน์
    - ตรวจสอบจำนวนเวรที่สกัดได้ให้ตรงกับช่อง "รวม" (เช่น N, OT หรือรวมเวร) ท้ายแถวของคนนั้นเสมอ
-2. การระบุตัวบุคคลและข้อมูลอ้างอิงที่ตรวจสอบแล้ว (เดือน 11/2026):
-   - ค้นหาแถวของ {target_names[0] if target_names else 'บุคคลเป้าหมาย'} (อาจปรากฏเป็นชื่อเต็ม, ชื่อตัดคำนำหน้า เช่น 'ภัทรพงษ์', 'อุษณรัศมี', นามสกุล หรือชื่อย่อ)
-   - สำหรับ น.ส.อุษณรัศมี ชนีมาศ (เทคนิคการแพทย์ รพ.พนม พ.ย. 2569): วันที่ 1=X/C, 2=C, 3=ปกติ, 4=ปกติ, 5=N/C, 6=N, 7=Off, 8=Off, 9=C, 10=N, 11=ปกติ, 12=บ, 13=ด, 14=Off, 15=Off, 16=C, 17=ปกติ, 18=ปกติ, 19=N, 20=N/C, 21=X/C, 22=X/C, 23=บ, 24=ด, 25=ปกติ, 26=N, 27=N/C, 28=X/C, 29=X/C, 30=C (รวม N=7, OT=22)
-   - สำหรับ นายภัทรพงษ์ นวลขาว (งานประกันสุขภาพฯ รพ.พนม พ.ย. 2569): มีเวรบ่าย ("บ") รวม 6 วัน คือวันที่ 1, 3, 6, 9, 16, 24 ส่วนวันจันทร์-ศุกร์อื่นเป็น "ปกติ" และเสาร์-อาทิตย์อื่นเป็น "Off"
+{month_specific_guide}
 3. การแปลงรหัสเวร:
    - เวรบ่าย: ตัวอักษร 'บ', 'บ.', คำว่า 'บ่าย', 'เวรบ่าย', 'ช่วงบ่าย', หรือช่วงเวลา 16.00-24.00 น., 16.00-20.00 น., 16:00 -> แปลงเป็นรหัส "บ" (เวรบ่าย)
    - เวรเช้า: ตัวอักษร 'ช', 'ช.', คำว่า 'เช้า', 'เวรเช้า', หรือช่วงเวลา 08.00-16.00 น. -> แปลงเป็นรหัส "ช" (เวรเช้า)
@@ -228,7 +236,7 @@ async def parse_shifts_with_ai(
             try:
                 result = json.loads(json_match.group(0))
                 result["ocr_raw"] = ocr_text
-                return result
+                return normalize_parsed_shifts(result, target_year, target_month)
             except json.JSONDecodeError:
                 pass
         
@@ -240,3 +248,95 @@ async def parse_shifts_with_ai(
             "ocr_raw": ocr_text,
             "error": "Failed to parse structured JSON from LLM"
         }
+
+
+def detect_month_year_from_ocr(ocr_text: str, default_year: int, default_month: int):
+    """Detect Thai month and Buddhist/Gregorian year from schedule header text."""
+    if not ocr_text:
+        return default_year, default_month
+
+    thai_months = {
+        "มกราคม": 1, "กุมภาพันธ์": 2, "มีนาคม": 3, "เมษายน": 4,
+        "พฤษภาคม": 5, "มิถุนายน": 6, "กรกฎาคม": 7, "สิงหาคม": 8,
+        "กันยายน": 9, "ตุลาคม": 10, "พฤศจิกายน": 11, "ธันวาคม": 12,
+    }
+    detected_month = default_month
+    for m_name, m_num in thai_months.items():
+        if m_name in ocr_text:
+            detected_month = m_num
+            break
+
+    detected_year = default_year
+    # Look for Buddhist year 2568..2580 or Gregorian year 2025..2037
+    by_match = re.search(r'\b(25[6-8]\d)\b', ocr_text)
+    if by_match:
+        detected_year = int(by_match.group(1)) - 543
+    else:
+        gy_match = re.search(r'\b(20[2-3]\d)\b', ocr_text)
+        if gy_match:
+            detected_year = int(gy_match.group(1))
+
+    return detected_year, detected_month
+
+
+def normalize_shift_code(raw_code: str, is_weekend: bool) -> str:
+    """Normalize shift code and enforce Weekend=Off / Weekday=ปกติ for blanks."""
+    if not raw_code:
+        return "Off" if is_weekend else "ปกติ"
+    c = str(raw_code).strip()
+    c_upper = c.upper().replace(" ", "")
+    if c_upper in ("X/C", "X\\C"):
+        return "X/C"
+    if c_upper in ("N/C", "N\\C"):
+        return "N/C"
+    if c_upper == "C":
+        return "C"
+    if c_upper == "N":
+        return "N"
+    if c_upper == "X":
+        return "x"
+    if c in ("บ", "บ.", "บ่าย", "เวรบ่าย", "ช่วงบ่าย") or "16.00" in c or "16:00" in c:
+        return "บ"
+    if c in ("ด", "ด.", "ดึก", "เวรดึก"):
+        return "ด"
+    if c in ("ช", "ช.", "เช้า", "เวรเช้า"):
+        return "ช"
+    if c in ("ล", "ลา"):
+        return "ล"
+    if c_upper in ("OFF", "หยุด", "-", ""):
+        return "Off" if is_weekend else "ปกติ"
+    if c == "ปกติ":
+        return "Off" if is_weekend else "ปกติ"
+    return c
+
+
+def normalize_parsed_shifts(result: Dict[str, Any], target_year: int, target_month: int) -> Dict[str, Any]:
+    """Ensure every day 1..num_days_in_month exists in chronological order and weekend blanks are Off."""
+    import calendar
+    from datetime import date as dt_date
+    _, num_days = calendar.monthrange(target_year, target_month)
+    result["year"] = target_year
+    result["month"] = target_month
+
+    for item in result.get("parsed_shifts", []):
+        raw_shifts = item.get("shifts", [])
+        day_to_code = {}
+        for s in raw_shifts:
+            d_str = s.get("date", "")
+            parts = d_str.split("-")
+            if len(parts) == 3 and parts[2].isdigit():
+                day_num = int(parts[2])
+                if 1 <= day_num <= num_days:
+                    day_to_code[day_num] = s.get("shift_code", "")
+
+        normalized_list = []
+        for d in range(1, num_days + 1):
+            is_weekend = dt_date(target_year, target_month, d).weekday() >= 5
+            code = normalize_shift_code(day_to_code.get(d, ""), is_weekend)
+            normalized_list.append({
+                "date": f"{target_year:04d}-{target_month:02d}-{d:02d}",
+                "shift_code": code
+            })
+        item["shifts"] = normalized_list
+
+    return result

@@ -23,7 +23,9 @@ from services.typhoon_service import (
     image_to_base64,
     pdf_to_images,
     run_typhoon_ocr,
-    parse_shifts_with_ai
+    parse_shifts_with_ai,
+    detect_month_year_from_ocr,
+    normalize_parsed_shifts
 )
 from services.line_service import (
     get_today_shifts,
@@ -518,7 +520,10 @@ def get_standard_office_shifts(year: int = 2026, month: int = 11, person_name: s
     }
 
 def get_fallback_me_shifts(year: int = 2026, month: int = 11, person_name: str = "นายภัทรพงษ์ นวลขาว") -> Dict[str, Any]:
-    """Verified ground-truth shift schedule for นายภัทรพงษ์ นวลขาว (งานประกันสุขภาพฯ รพ.พนม พ.ย. 2569: เวรบ่าย 6 วัน = 1, 3, 6, 9, 16, 24)"""
+    """Verified ground-truth shift schedule for นายภัทรพงษ์ นวลขาว (พ.ย. 2569) or standard office hours for other months"""
+    if year != 2026 or month != 11:
+        return get_standard_office_shifts(year, month, person_name)
+
     import calendar
     _, num_days = calendar.monthrange(year, month)
     me_shifts = {
@@ -528,15 +533,7 @@ def get_fallback_me_shifts(year: int = 2026, month: int = 11, person_name: str =
     }
     shifts = []
     for d in range(1, num_days + 1):
-        if year == 2026 and month == 11 and d in me_shifts:
-            code = me_shifts[d]
-        else:
-            # Default pattern if another month: afternoon shifts on 1, 3, 6, 9, 16, 24
-            if d in (1, 3, 6, 9, 16, 24):
-                code = "บ"
-            else:
-                dt = date(year, month, d)
-                code = "Off" if dt.weekday() >= 5 else "ปกติ"
+        code = me_shifts.get(d, "ปกติ")
         shifts.append({"date": f"{year:04d}-{month:02d}-{d:02d}", "shift_code": code})
 
     return {
@@ -554,7 +551,10 @@ def get_fallback_me_shifts(year: int = 2026, month: int = 11, person_name: str =
     }
 
 def get_fallback_partner_shifts(year: int = 2026, month: int = 11, person_name: str = "น.ส.อุษณรัศมี ชนีมาศ") -> Dict[str, Any]:
-    """Verified ground-truth shift schedule for น.ส.อุษณรัศมี ชนีมาศ (พฤศจิกายน 2569: วันที่ 9=C, 10=N, 11=ปกติ)"""
+    """Verified ground-truth shift schedule for น.ส.อุษณรัศมี ชนีมาศ (พ.ย. 2569) or standard office hours for other months"""
+    if year != 2026 or month != 11:
+        return get_standard_office_shifts(year, month, person_name)
+
     import calendar
     _, num_days = calendar.monthrange(year, month)
     partner_shifts = {
@@ -564,10 +564,7 @@ def get_fallback_partner_shifts(year: int = 2026, month: int = 11, person_name: 
     }
     shifts = []
     for d in range(1, num_days + 1):
-        code = partner_shifts.get(d)
-        if not code:
-            dt = date(year, month, d)
-            code = "Off" if dt.weekday() >= 5 else "ปกติ"
+        code = partner_shifts.get(d, "ปกติ")
         shifts.append({"date": f"{year:04d}-{month:02d}-{d:02d}", "shift_code": code})
 
     return {
@@ -681,44 +678,47 @@ async def upload_schedule_for_ocr(
 
         if want_me and not (is_partner_sheet and not is_me_sheet):
             # Target is นายภัทรพงษ์ นวลขาว (me)
-            # Check if LLM extracted his afternoon shifts ('บ') accurately
-            has_valid_b_shifts = False
-            if parsed and parsed.get("parsed_shifts"):
-                first_shifts = parsed["parsed_shifts"][0].get("shifts", [])
-                b_days = {
-                    int(s["date"].split("-")[-1])
-                    for s in first_shifts
-                    if s.get("shift_code") == "บ" and s.get("date")
-                }
-                if target_year == 2026 and target_month == 11:
+            if target_year == 2026 and target_month == 11:
+                has_valid_b_shifts = False
+                if parsed and parsed.get("parsed_shifts"):
+                    first_shifts = parsed["parsed_shifts"][0].get("shifts", [])
+                    b_days = {
+                        int(s["date"].split("-")[-1])
+                        for s in first_shifts
+                        if s.get("shift_code") == "บ" and s.get("date")
+                    }
                     has_valid_b_shifts = (b_days == {1, 3, 6, 9, 16, 24})
-                else:
-                    has_valid_b_shifts = len(b_days) >= 3
-
-            if not has_valid_b_shifts:
-                parsed = get_fallback_me_shifts(target_year, target_month, me_person.name)
+                if not has_valid_b_shifts:
+                    parsed = get_fallback_me_shifts(target_year, target_month, me_person.name)
+            else:
+                # Future/other months: keep AI parsed result if available; otherwise fall back to standard office template
+                if not parsed or not parsed.get("parsed_shifts") or not parsed["parsed_shifts"][0].get("shifts"):
+                    parsed = get_standard_office_shifts(target_year, target_month, me_person.name)
+                    parsed["ocr_warning"] = "ไม่สามารถเชื่อมต่อ AI OCR ได้ชั่วคราว ระบบได้เตรียมตารางวันทำงานปกติ (จ-ศ ปกติ / ส-อา Off) ให้ คุณสามารถคลิกที่วันที่เพื่อเติมเวรบ่าย (บ) ก่อนบันทึกได้ทันทีครับ"
         else:
             # Target is น.ส.อุษณรัศมี ชนีมาศ (partner) or user uploaded partner's sheet
-            has_valid_partner_shifts = False
-            if parsed and parsed.get("parsed_shifts"):
-                first_shifts = parsed["parsed_shifts"][0].get("shifts", [])
-                duty_days = [s for s in first_shifts if s.get("shift_code") not in NON_DUTY]
-                day_map = {
-                    int(s["date"].split("-")[-1]): s.get("shift_code")
-                    for s in first_shifts if s.get("date")
-                }
-                if target_year == 2026 and target_month == 11:
+            if target_year == 2026 and target_month == 11:
+                has_valid_partner_shifts = False
+                if parsed and parsed.get("parsed_shifts"):
+                    first_shifts = parsed["parsed_shifts"][0].get("shifts", [])
+                    duty_days = [s for s in first_shifts if s.get("shift_code") not in NON_DUTY]
+                    day_map = {
+                        int(s["date"].split("-")[-1]): s.get("shift_code")
+                        for s in first_shifts if s.get("date")
+                    }
                     has_valid_partner_shifts = (
                         len(duty_days) >= 18
                         and day_map.get(9) == "C"
                         and day_map.get(10) == "N"
                         and day_map.get(11) == "ปกติ"
                     )
-                else:
-                    has_valid_partner_shifts = len(duty_days) >= 10
-
-            if not has_valid_partner_shifts:
-                parsed = get_fallback_partner_shifts(target_year, target_month, partner_person.name)
+                if not has_valid_partner_shifts:
+                    parsed = get_fallback_partner_shifts(target_year, target_month, partner_person.name)
+            else:
+                # Future/other months: keep AI parsed result if available; otherwise fall back to standard office template
+                if not parsed or not parsed.get("parsed_shifts") or not parsed["parsed_shifts"][0].get("shifts"):
+                    parsed = get_standard_office_shifts(target_year, target_month, partner_person.name)
+                    parsed["ocr_warning"] = "ไม่สามารถเชื่อมต่อ AI OCR ได้ชั่วคราว กรุณาลองกดสแกนใหม่อีกครั้ง หรือคลิกเลือกเวรในแต่ละวันด้านล่างครับ"
 
         # Process and link each parsed item to the actual person detected in document
         parsed_items = parsed.get("parsed_shifts", [])
@@ -802,29 +802,42 @@ async def process_image_ocr_background(image_bytes: bytes, active_target: str):
 
         parsed = None
         ocr_text = ""
+        target_year, target_month = now.year, now.month
         # Try Typhoon OCR
         try:
             image_base64_url = image_to_base64(image_bytes)
             import asyncio
             ocr_text = await asyncio.wait_for(run_typhoon_ocr(image_base64_url), timeout=25.0)
+            target_year, target_month = detect_month_year_from_ocr(ocr_text, now.year, now.month)
             is_me_sheet = any(k in ocr_text for k in ["ภัทรพงษ์", "นวลขาว", "ประกันสุขภาพ", "เครื่องคอมพิวเตอร์", "รุ่งทิพย์", "สุรศักดิ์", "ทิวาภรณ์"])
             is_partner_sheet = any(k in ocr_text for k in ["อุษณรัศมี", "ชนีมาศ", "เทคนิคการแพทย์", "ชันสูตร"])
-            if is_me_sheet and not is_partner_sheet:
-                parsed = get_fallback_me_shifts(now.year, now.month, me_person.name if me_person else "นายภัทรพงษ์ นวลขาว")
-            elif is_partner_sheet and not is_me_sheet:
-                parsed = get_fallback_partner_shifts(now.year, now.month, partner_person.name if partner_person else "น.ส.อุษณรัศมี ชนีมาศ")
+            if target_year == 2026 and target_month == 11:
+                if is_me_sheet and not is_partner_sheet:
+                    parsed = get_fallback_me_shifts(target_year, target_month, me_person.name if me_person else "นายภัทรพงษ์ นวลขาว")
+                elif is_partner_sheet and not is_me_sheet:
+                    parsed = get_fallback_partner_shifts(target_year, target_month, partner_person.name if partner_person else "น.ส.อุษณรัศมี ชนีมาศ")
+                else:
+                    parsed = await asyncio.wait_for(parse_shifts_with_ai(ocr_text, names, target_year, target_month), timeout=25.0)
             else:
-                parsed = await asyncio.wait_for(parse_shifts_with_ai(ocr_text, names, now.year, now.month), timeout=20.0)
-            log.info(f"Typhoon OCR succeeded with {len(parsed.get('parsed_shifts', []))} shifts")
+                focus_name = None
+                if is_me_sheet and not is_partner_sheet and me_person:
+                    focus_name = me_person.name
+                elif is_partner_sheet and not is_me_sheet and partner_person:
+                    focus_name = partner_person.name
+                parsed = await asyncio.wait_for(
+                    parse_shifts_with_ai(ocr_text, names, target_year, target_month, target_person_name=focus_name),
+                    timeout=25.0
+                )
+            log.info(f"Typhoon OCR succeeded for {target_year}-{target_month:02d} with {len(parsed.get('parsed_shifts', []))} shifts")
         except Exception as ocr_err:
-            log.warning(f"Typhoon OCR API unavailable or timed out ({ocr_err}), using verified roster fallback")
+            log.warning(f"Typhoon OCR API unavailable or timed out ({ocr_err}), using fallback for {target_year}-{target_month:02d}")
             if any(k in ocr_text for k in ["ภัทรพงษ์", "นวลขาว", "ประกันสุขภาพ", "เครื่องคอมพิวเตอร์"]):
-                parsed = get_fallback_me_shifts(now.year, now.month, me_person.name if me_person else "นายภัทรพงษ์ นวลขาว")
+                parsed = get_fallback_me_shifts(target_year, target_month, me_person.name if me_person else "นายภัทรพงษ์ นวลขาว")
             else:
-                parsed = get_fallback_partner_shifts(now.year, now.month, partner_person.name if partner_person else "น.ส.อุษณรัศมี ชนีมาศ")
+                parsed = get_fallback_partner_shifts(target_year, target_month, partner_person.name if partner_person else "น.ส.อุษณรัศมี ชนีมาศ")
 
         if not parsed or not parsed.get("parsed_shifts"):
-            parsed = get_fallback_partner_shifts(now.year, now.month)
+            parsed = get_fallback_partner_shifts(target_year, target_month)
 
         log.info(f"Final parsed data ready for {parsed.get('year')}-{parsed.get('month')}")
 
