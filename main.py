@@ -465,17 +465,24 @@ async def upload_schedule_for_ocr(
     # Attach person_ids to parsed results
     person_map = {p.name: p.id for p in persons}
     for item in parsed.get("parsed_shifts", []):
-        if selected_person:
+        p_name = item.get("person_name", "")
+        # First check if the parsed name directly matches a known person
+        matched_p = None
+        for p in persons:
+            if p.name in p_name or p_name in p.name:
+                matched_p = p
+                break
+
+        if matched_p:
+            item["person_id"] = matched_p.id
+            item["person_name"] = matched_p.name
+        elif selected_person:
             item["person_id"] = selected_person.id
             item["person_name"] = selected_person.name
         else:
-            p_name = item.get("person_name")
-            item["person_id"] = person_map.get(p_name)
-            if not item["person_id"]:
-                for p in persons:
-                    if p.name in p_name or p_name in p.name or p.role == "partner":
-                        item["person_id"] = p.id
-                        break
+            partner = next((p for p in persons if p.role == "partner"), persons[0])
+            item["person_id"] = partner.id
+            item["person_name"] = partner.name
 
     return {
         "success": True,

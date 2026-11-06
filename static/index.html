@@ -777,9 +777,12 @@
           const opt = document.createElement('option');
           opt.value = p.id;
           opt.innerText = `${p.role === 'partner' ? '👩 แฟน' : '🧑 ฉัน'}: ${p.name}`;
-          if (p.role === 'partner') opt.selected = true;
           pSelect.appendChild(opt);
         });
+        const partner = persons.find(x => x.role === 'partner');
+        if (partner) {
+          pSelect.value = partner.id;
+        }
         handleOcrPersonChange();
       }
       document.getElementById('ocrModal').classList.remove('hidden');
@@ -885,17 +888,18 @@
           return `<span class="inline-block px-1.5 py-0.5 m-0.5 rounded border text-[10px] font-medium ${badgeClass}">${dNum}: <b>${s.shift_code}</b></span>`;
         }).join('');
 
-        const personOptionsHtml = persons.map(p => `
-          <option value="${p.id}" ${p.id === item.person_id ? 'selected' : ''}>
+        const personOptionsHtml = persons.map(p => {
+          const isSelected = (String(p.id) === String(item.person_id)) || (item.person_name && (p.name.includes(item.person_name) || item.person_name.includes(p.name)));
+          return `<option value="${p.id}" ${isSelected ? 'selected' : ''}>
             ${p.role === 'partner' ? '👩 แฟน' : '🧑 ฉัน'}: ${p.name}
-          </option>
-        `).join('');
+          </option>`;
+        }).join('');
 
         card.innerHTML = `
           <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-1.5">
             <div class="flex items-center gap-1.5">
               <span class="font-bold text-slate-700 text-xs">บันทึกให้:</span>
-              <select onchange="updateOcrItemPerson(${idx}, this.value)" class="text-xs font-semibold p-1 px-2 rounded-lg border border-slate-300 bg-white text-slate-800 shadow-2xs">
+              <select id="ocrItemPersonSelect_${idx}" onchange="updateOcrItemPerson(${idx}, this.value)" class="text-xs font-semibold p-1 px-2 rounded-lg border border-slate-300 bg-white text-slate-800 shadow-2xs">
                 ${personOptionsHtml}
               </select>
             </div>
@@ -923,19 +927,17 @@
     async function confirmSaveOcrShifts() {
       if (!ocrParsedData || !ocrParsedData.parsed_shifts) return;
 
-      for (const item of ocrParsedData.parsed_shifts) {
-        if (!item.person_id) {
-          // Fallback to match by name
-          const p = persons.find(x => x.name.includes(item.person_name) || item.person_name.includes(x.name));
-          if (p) item.person_id = p.id;
-        }
+      for (let idx = 0; idx < ocrParsedData.parsed_shifts.length; idx++) {
+        const item = ocrParsedData.parsed_shifts[idx];
+        const itemSelect = document.getElementById(`ocrItemPersonSelect_${idx}`);
+        const finalPersonId = itemSelect ? parseInt(itemSelect.value) : item.person_id;
 
-        if (item.person_id) {
+        if (finalPersonId) {
           await fetch('/api/shifts/batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              person_id: item.person_id,
+              person_id: finalPersonId,
               shifts: item.shifts
             })
           });
