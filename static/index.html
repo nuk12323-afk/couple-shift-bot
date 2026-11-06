@@ -751,11 +751,15 @@
       document.getElementById('btnStartOcr').disabled = true;
 
       try {
-        const res = await fetch('/api/ocr/upload', {
+        const resp = await fetch('/api/ocr/upload', {
           method: 'POST',
           body: formData
-        }).then(r => r.json());
-
+        });
+        if (!resp.ok) {
+          const errText = await resp.text();
+          throw new Error(`เซิร์ฟเวอร์แจ้งข้อผิดพลาด (${resp.status}): ${errText.slice(0, 100)}`);
+        }
+        const res = await resp.json();
         ocrParsedData = res.data;
         renderOcrPreview(res.data, res.persons);
       } catch (e) {

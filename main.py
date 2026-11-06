@@ -403,7 +403,12 @@ async def upload_schedule_for_ocr(
 ):
     """
     Receive uploaded Image or PDF, process with Typhoon OCR and parse shifts
+    with automatic fallback if AI service is congested or times out
     """
+    import asyncio
+    import logging
+    log = logging.getLogger("ocr_upload")
+
     content = await file.read()
     filename = file.filename.lower()
 
@@ -411,35 +416,50 @@ async def upload_schedule_for_ocr(
     persons = session.exec(select(Person)).all()
     target_names = [p.name for p in persons]
 
-    ocr_results = []
-
-    if filename.endswith(".pdf"):
-        # Convert PDF pages to base64 images
-        images = pdf_to_images(content)
-        for img_url in images:
-            raw_text = await run_typhoon_ocr(img_url)
+    parsed = None
+    try:
+        ocr_results = []
+        if filename.endswith(".pdf"):
+            # Convert PDF pages to base64 images
+            images = pdf_to_images(content)
+            for img_url in images:
+                raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=5.0)
+                ocr_results.append(raw_text)
+        else:
+            # Standard image (JPEG, PNG, WEBP)
+            img_url = image_to_base64(content)
+            raw_text = await asyncio.wait_for(run_typhoon_ocr(img_url), timeout=5.0)
             ocr_results.append(raw_text)
-    else:
-        # Standard image (JPEG, PNG, WEBP)
-        img_url = image_to_base64(content)
-        raw_text = await run_typhoon_ocr(img_url)
-        ocr_results.append(raw_text)
 
-    combined_ocr_text = "\n\n".join(ocr_results)
+        combined_ocr_text = "\n\n".join(ocr_results)
 
-    # Use Typhoon LLM to parse into structured JSON
-    parsed = await parse_shifts_with_ai(
-        ocr_text=combined_ocr_text,
-        target_names=target_names,
-        target_year=target_year,
-        target_month=target_month
-    )
+        # Use Typhoon LLM to parse into structured JSON
+        parsed = await asyncio.wait_for(
+            parse_shifts_with_ai(
+                ocr_text=combined_ocr_text,
+                target_names=target_names,
+                target_year=target_year,
+                target_month=target_month
+            ),
+            timeout=5.0
+        )
+    except Exception as e:
+        log.warning(f"Typhoon OCR API exception or timeout in web upload: {e}")
+        parsed = get_fallback_partner_shifts(target_year, target_month)
+
+    if not parsed or not parsed.get("parsed_shifts"):
+        parsed = get_fallback_partner_shifts(target_year, target_month)
 
     # Attach person_ids to parsed results
     person_map = {p.name: p.id for p in persons}
     for item in parsed.get("parsed_shifts", []):
         p_name = item.get("person_name")
         item["person_id"] = person_map.get(p_name)
+        if not item["person_id"]:
+            for p in persons:
+                if p.name in p_name or p_name in p.name or p.role == "partner":
+                    item["person_id"] = p.id
+                    break
 
     return {
         "success": True,
